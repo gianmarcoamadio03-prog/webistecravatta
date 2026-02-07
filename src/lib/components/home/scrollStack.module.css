@@ -1,0 +1,41 @@
+.scroller {
+  position: relative;
+  width: 100%;
+  overflow-x: visible;
+}
+
+/* ✅ quando usi lo scroll della window NON deve essere un "box scrollabile" */
+.window {
+  height: auto;
+  overflow: visible;
+}
+
+/* (opzionale) se un giorno vuoi uno stack con scroll interno */
+.local {
+  height: 560px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.inner {
+  position: relative;
+  /* meno padding = le card si accavallano prima */
+  padding: 12vh 0 42vh;
+  min-height: 110vh;
+}
+
+.card {
+  position: relative;
+  transform-origin: top center;
+  will-change: transform, filter;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+.end {
+  width: 100%;
+  height: 55vh; /* spazio per "rilasciare" l’ultima card */
+}

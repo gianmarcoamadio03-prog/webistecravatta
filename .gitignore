@@ -1,0 +1,6 @@
+.env.local
+service-account.json
+node_modules
+.next
+.turbo
+.DS_Store
