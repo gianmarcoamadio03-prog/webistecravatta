@@ -9,3 +9,8 @@ node_modules
 service-account.json
 node_modules
 .next
+
+.env.local
+service-account.json
+node_modules
+.next
