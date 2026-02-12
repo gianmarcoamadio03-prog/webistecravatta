@@ -14,3 +14,7 @@ node_modules
 service-account.json
 node_modules
 .next
+
+# scraper runtime files (local)
+scraper/ai_cache.json
+scraper/checkpoint.json
