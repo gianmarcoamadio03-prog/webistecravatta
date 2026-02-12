@@ -19,6 +19,10 @@ const PATH_SPEED = 0.10;
 const SMOOTH_POS = 0.055;
 const WARP = 0.14;
 
+// ✅ lens size (deve combaciare con .qc-lensWrap)
+const LENS_SIZE = 122;
+const LENS_SAFE_PAD = 26; // margine extra (glint/ombra) per non uscire dai bordi
+
 // ✅ sposta tutto più su (cambia solo questo se vuoi ancora più alto: "42%" / "40%")
 const CENTER_TOP = "44%";
 
@@ -96,8 +100,13 @@ export default function QualityCheckHomeTeaser() {
 
       const { w, h } = dims.current;
 
-      const ax = clamp(w * 0.34, 220, 360);
-      const ay = clamp(h * 0.48, 160, 240);
+      // ✅ amplitudes “safe”: su phone non deve mai uscire dai bordi
+      // (prima avevamo min/max fissi che su schermi piccoli spingevano fuori)
+      const maxAx = Math.max(0, w / 2 - LENS_SIZE / 2 - LENS_SAFE_PAD);
+      const maxAy = Math.max(0, h / 2 - LENS_SIZE / 2 - LENS_SAFE_PAD);
+
+      const ax = Math.min(w * 0.34, maxAx);
+      const ay = Math.min(h * 0.48, maxAy);
 
       let theta = t * (Math.PI * 2) * PATH_SPEED;
       if (WARP > 0) theta = theta + Math.sin(theta) * WARP;
@@ -133,7 +142,10 @@ export default function QualityCheckHomeTeaser() {
 
   return (
     <div className="relative mt-4 flex items-center justify-center">
-      <div ref={stageRef} className="relative h-[360px] w-full max-w-[940px] select-none">
+      <div
+        ref={stageRef}
+        className="relative h-[320px] w-full max-w-[900px] select-none sm:h-[360px] sm:max-w-[940px]"
+      >
         {/* glow + noise */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div className="absolute inset-0 bg-[radial-gradient(55%_55%_at_50%_40%,rgba(255,255,255,0.10),transparent_62%)]" />

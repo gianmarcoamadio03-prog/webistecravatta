@@ -1,6 +1,5 @@
 // components/SellersSection.tsx
 import Link from "next/link";
-
 import ParallaxSection from "@/components/ParallaxSection";
 import SellersSectionClient from "@/components/SellersSectionClient";
 
@@ -17,8 +16,8 @@ export default function SellersSection({ id = "sellers", sellers }: Props) {
       title="Sellers"
       description="I migliori seller selezionati, con card premium e accesso veloce."
       childrenWidth="wide"
+      decorMode="mobile" // ✅ così su desktop NON si vede, su mobile sì
     >
-      {/* ✅ CTA come le altre sezioni */}
       <div className="sheet-ctaRow">
         <Link href="/sellers" className="sheet-cta">
           Vai ai Sellers →

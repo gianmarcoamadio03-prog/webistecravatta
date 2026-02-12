@@ -1,4 +1,3 @@
-// app/spreadsheet/SpreadsheetClient.tsx
 "use client";
 
 import Link from "next/link";
@@ -44,6 +43,7 @@ type SheetItem = {
 };
 
 type SortMode = "default" | "price_desc" | "price_asc";
+type PickerKind = "sort" | "seller" | "brand" | "category";
 
 function norm(s: string) {
   return (s ?? "")
@@ -54,7 +54,6 @@ function norm(s: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-/** ✅ evita "filtri fantasma": "" | null | undefined -> "all" */
 function cleanFilter(v: any) {
   const s = (v ?? "").toString().trim();
   return s ? s : "all";
@@ -123,15 +122,11 @@ function pickPics(x: SheetItem) {
 }
 
 function pickCover(x: SheetItem) {
-  // 1) PRIORITÀ ASSOLUTA: img1 esplicita (colonna G in sheet)
   const explicit = (x.img1 ?? (x as any).cover ?? "").toString().trim();
   if (explicit) return explicit;
-
-  // 2) fallback: prima immagine disponibile (ordine dello scraper)
   const pics = pickPics(x);
   return pics[0] ?? "";
 }
-
 
 function findFirstSourceUrl(item: SheetItem) {
   if (isValidUrl(item?.source_url)) return item.source_url!.trim();
@@ -139,11 +134,7 @@ function findFirstSourceUrl(item: SheetItem) {
   for (const [, v] of Object.entries(item)) {
     if (!isValidUrl(v)) continue;
     const s = (v as string).toLowerCase();
-    if (
-      s.includes("taobao.com") ||
-      s.includes("tmall.com") ||
-      s.includes("weidian.com")
-    ) {
+    if (s.includes("taobao.com") || s.includes("tmall.com") || s.includes("weidian.com")) {
       return (v as string).trim();
     }
   }
@@ -209,15 +200,9 @@ function proxMaybe(u: string) {
   return `/api/img?url=${encodeURIComponent(raw)}`;
 }
 
-/**
- * ✅ PERFORMANCE: nelle griglie usiamo versioni più leggere delle foto Yupoo.
- * (di solito esistono /medium.* e /small.* oltre a /big.*)
- */
 function yupooListSize(u: string, size: "medium" | "small" = "medium") {
   const raw = (u ?? "").trim();
   if (!raw) return "";
-
-  // se già proxata, non tocchiamo (evitiamo doppie encode)
   if (raw.includes("/api/img?url=")) return raw;
 
   try {
@@ -225,7 +210,6 @@ function yupooListSize(u: string, size: "medium" | "small" = "medium") {
     const host = url.hostname.toLowerCase();
     if (!host.includes("yupoo.com")) return raw;
 
-    // sostituisci solo se termina con /big.<ext>
     url.pathname = url.pathname.replace(/\/big\.(jpg|jpeg|png|webp)$/i, `/${size}.$1`);
     return url.toString();
   } catch {
@@ -233,22 +217,16 @@ function yupooListSize(u: string, size: "medium" | "small" = "medium") {
   }
 }
 
-/** ✅ seed forte (evita collisioni) */
 function makeShuffleSeed() {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
 const chipBase =
-  "inline-flex items-center justify-center h-7 px-2.5 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] text-[11px] text-white/80 transition whitespace-nowrap";
+  "inline-flex items-center justify-center h-8 sm:h-7 px-3 sm:px-2.5 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] text-[12px] sm:text-[11px] text-white/80 transition whitespace-nowrap";
 
 function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClear}
-      className={chipBase}
-      title="Rimuovi filtro"
-    >
+    <button type="button" onClick={onClear} className={chipBase} title="Rimuovi filtro">
       <span className="whitespace-nowrap">{label}</span>
       <span className="ml-1 text-white/45 hover:text-white/80">×</span>
     </button>
@@ -289,7 +267,6 @@ function AgentButton({
   );
 }
 
-/** ✅ Shuffle icon stile Spotify */
 function ShuffleIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
@@ -355,12 +332,26 @@ function ShuffleIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function ChevronDown({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M5 7.5l5 5 5-5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function SpreadsheetClient({
   items,
   page,
   totalPages,
   totalItems,
-  pageSize, // compat
+  pageSize,
   facets,
   initialFilters,
 }: {
@@ -383,23 +374,21 @@ export default function SpreadsheetClient({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const [q, setQ] = useState(initialFilters?.q ?? "");
-  const [sellerFilter, setSellerFilter] = useState<string>(
-    cleanFilter(initialFilters?.seller)
-  );
-  const [brandFilter, setBrandFilter] = useState<string>(
-    cleanFilter(initialFilters?.brand)
-  );
-  const [categoryFilter, setCategoryFilter] = useState<string>(
-    cleanFilter(initialFilters?.category)
-  );
+  const [sellerFilter, setSellerFilter] = useState<string>(cleanFilter(initialFilters?.seller));
+  const [brandFilter, setBrandFilter] = useState<string>(cleanFilter(initialFilters?.brand));
+  const [categoryFilter, setCategoryFilter] = useState<string>(cleanFilter(initialFilters?.category));
   const [sortMode, setSortMode] = useState<SortMode>("default");
   const [showTop, setShowTop] = useState(false);
+
+  // ✅ mobile UX
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState<PickerKind | null>(null);
+  const [pickerQuery, setPickerQuery] = useState("");
 
   const order: "default" | "random" =
     searchParams?.get("order") === "default" ? "default" : "random";
   const shuffleKey = searchParams?.get("shuffle") ?? "";
 
-  /** ✅ se sei in random ma manca shuffle: genera seed e sostituisci URL */
   useEffect(() => {
     if (order === "random" && !shuffleKey) {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -415,12 +404,17 @@ export default function SpreadsheetClient({
     setSellerFilter(cleanFilter(initialFilters?.seller));
     setBrandFilter(cleanFilter(initialFilters?.brand));
     setCategoryFilter(cleanFilter(initialFilters?.category));
-  }, [
-    initialFilters?.q,
-    initialFilters?.seller,
-    initialFilters?.brand,
-    initialFilters?.category,
-  ]);
+  }, [initialFilters?.q, initialFilters?.seller, initialFilters?.brand, initialFilters?.category]);
+
+  // lock scroll quando la bottom-sheet è aperta
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [pickerOpen]);
 
   const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -440,7 +434,6 @@ export default function SpreadsheetClient({
     if (order === "default") params.set("order", "default");
     else {
       params.set("order", "random");
-      // ✅ GARANTISCI che lo shuffle esista sempre in random
       params.set("shuffle", shuffleKey || makeShuffleSeed());
     }
 
@@ -489,7 +482,6 @@ export default function SpreadsheetClient({
     router.push(qs ? `/spreadsheet?${qs}` : "/spreadsheet");
   }
 
-  /** ✅ back link: passa al dettaglio l’intera query del catalogo */
   const backQS = searchParams?.toString() ?? "";
   const backParam = backQS ? `?back=${encodeURIComponent(backQS)}` : "";
   function itemHref(slug: string) {
@@ -506,10 +498,7 @@ export default function SpreadsheetClient({
       const mulebuy = buildMulebuyLink(it);
 
       const priceRaw = (it as any)?.price_eur;
-      const price =
-        typeof priceRaw === "number" && Number.isFinite(priceRaw)
-          ? (priceRaw as number)
-          : null;
+      const price = typeof priceRaw === "number" && Number.isFinite(priceRaw) ? priceRaw : null;
 
       return {
         idx,
@@ -528,8 +517,7 @@ export default function SpreadsheetClient({
 
   const normalized = useMemo(() => {
     const count = new Map<string, number>();
-    for (const x of baseList)
-      count.set(x.baseSlug, (count.get(x.baseSlug) ?? 0) + 1);
+    for (const x of baseList) count.set(x.baseSlug, (count.get(x.baseSlug) ?? 0) + 1);
 
     return baseList.map((x) => {
       const dup = (count.get(x.baseSlug) ?? 0) > 1;
@@ -540,12 +528,8 @@ export default function SpreadsheetClient({
 
   const sellers = useMemo(() => facets?.sellers ?? [], [facets?.sellers]);
   const brands = useMemo(() => facets?.brands ?? [], [facets?.brands]);
-  const categories = useMemo(
-    () => facets?.categories ?? [],
-    [facets?.categories]
-  );
+  const categories = useMemo(() => facets?.categories ?? [], [facets?.categories]);
 
-  /** ✅ ora NON shuffliamo più lato client: lo fa il server (globale) */
   const filtered = useMemo(() => {
     let out = normalized;
 
@@ -571,13 +555,9 @@ export default function SpreadsheetClient({
     sortMode !== "default";
 
   const sortLabel =
-    sortMode === "price_desc"
-      ? "Prezzo ↓"
-      : sortMode === "price_asc"
-      ? "Prezzo ↑"
-      : "";
+    sortMode === "price_desc" ? "Prezzo ↓" : sortMode === "price_asc" ? "Prezzo ↑" : "";
 
-  const container = "mx-auto w-full max-w-[1600px] px-5";
+  const container = "mx-auto w-full max-w-[1700px] px-4 sm:px-5";
 
   function shuffleNow() {
     const params = new URLSearchParams();
@@ -597,7 +577,6 @@ export default function SpreadsheetClient({
     router.push(`/spreadsheet?${params.toString()}`);
   }
 
-  /** ✅ Reset “vero”: torna a random ma con seed nuovo (niente seed0) */
   function resetAll() {
     if (qTimer.current) clearTimeout(qTimer.current);
     qTimer.current = null;
@@ -642,6 +621,7 @@ export default function SpreadsheetClient({
 
   const totalLabel = hasFilters ? "Risultati" : "Totale";
 
+  // desktop classes (invariato)
   const selectClass =
     "h-9 rounded-full px-3 bg-white/5 border border-white/10 text-[12px] text-white/90 outline-none focus:border-white/25";
   const btnCompact =
@@ -650,7 +630,7 @@ export default function SpreadsheetClient({
   const noResults = filtered.length === 0;
 
   const shufflePrimaryClass = [
-    "h-9 px-3.5 rounded-full inline-flex items-center gap-2",
+    "h-10 sm:h-9 px-4 sm:px-3.5 rounded-full inline-flex items-center justify-center gap-2",
     "border border-white/15",
     "bg-gradient-to-r from-violet-300/90 to-emerald-200/90",
     "text-black font-semibold",
@@ -663,219 +643,490 @@ export default function SpreadsheetClient({
   const pagerClass =
     "flex items-center h-11 rounded-full border border-white/10 bg-black/45 backdrop-blur-xl overflow-hidden shadow-[0_20px_90px_rgba(0,0,0,0.45)]";
 
+  // ✅ mobile (nuovo)
+  const mobileWrap = "sm:hidden mx-auto w-full max-w-[520px]";
+  const navCircle =
+    "h-10 w-10 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] text-white/85 inline-flex items-center justify-center transition";
+  const searchInput =
+    "h-10 w-full rounded-full pl-4 pr-10 bg-white/5 border border-white/10 text-[13px] text-white/90 outline-none focus:border-white/25";
+  const pillSecondary =
+    "h-10 w-full rounded-full border border-white/10 bg-white/5 hover:bg-white/8 text-[13px] text-white/85 transition inline-flex items-center justify-center";
+  const panel =
+    "rounded-3xl border border-white/10 bg-white/[0.03] shadow-[0_20px_90px_rgba(0,0,0,0.45)] overflow-hidden";
+  const panelInner = "p-3";
+  const pickerBtn =
+    "h-11 w-full rounded-full px-3 bg-white/5 border border-white/10 text-[13px] text-white/90 outline-none hover:bg-white/7 transition flex items-center justify-between";
+  const resetMobile =
+    "h-11 w-full rounded-full border border-white/10 bg-white/5 hover:bg-white/8 text-[13px] text-white/85 transition inline-flex items-center justify-center";
+
+  function openPicker(kind: PickerKind) {
+    setPickerQuery("");
+    setPickerOpen(kind);
+  }
+
+  function closePicker() {
+    setPickerOpen(null);
+    setPickerQuery("");
+  }
+
+  function labelFor(kind: PickerKind) {
+    if (kind === "sort") return sortMode === "default" ? "Ordina" : sortLabel;
+    if (kind === "seller") return sellerFilter === "all" ? "Seller: Tutti" : `Seller: ${sellerFilter}`;
+    if (kind === "brand") return brandFilter === "all" ? "Brand: Tutti" : `Brand: ${brandFilter}`;
+    return categoryFilter === "all" ? "Categoria: Tutte" : `Categoria: ${categoryFilter}`;
+  }
+
+  const pickerData = useMemo(() => {
+    const base = { title: "", options: [] as Array<{ value: string; label: string }> };
+
+    if (pickerOpen === "sort") {
+      return {
+        title: "Ordina",
+        options: [
+          { value: "default", label: "Ordina" },
+          { value: "price_desc", label: "Prezzo ↓" },
+          { value: "price_asc", label: "Prezzo ↑" },
+        ],
+      };
+    }
+    if (pickerOpen === "seller") {
+      return {
+        title: "Seller",
+        options: [{ value: "all", label: "Seller: Tutti" }, ...sellers.map((s) => ({ value: s, label: s }))],
+      };
+    }
+    if (pickerOpen === "brand") {
+      return {
+        title: "Brand",
+        options: [{ value: "all", label: "Brand: Tutti" }, ...brands.map((b) => ({ value: b, label: b }))],
+      };
+    }
+    if (pickerOpen === "category") {
+      return {
+        title: "Categoria",
+        options: [
+          { value: "all", label: "Categoria: Tutte" },
+          ...categories.map((c) => ({ value: c, label: c })),
+        ],
+      };
+    }
+    return base;
+  }, [pickerOpen, sellers, brands, categories]);
+
+  const pickerNeedsSearch = (pickerData?.options?.length ?? 0) > 12;
+
+  const pickerFilteredOptions = useMemo(() => {
+    const qn = norm(pickerQuery);
+    if (!qn) return pickerData.options;
+    return pickerData.options.filter((o) => norm(o.label).includes(qn));
+  }, [pickerData.options, pickerQuery]);
+
+  function pickerCurrentValue(kind: PickerKind) {
+    if (kind === "sort") return sortMode;
+    if (kind === "seller") return sellerFilter;
+    if (kind === "brand") return brandFilter;
+    return categoryFilter;
+  }
+
+  function applyPickerValue(kind: PickerKind, value: string) {
+    if (kind === "sort") {
+      setSortMode(value as SortMode);
+      closePicker();
+      return;
+    }
+
+    if (kind === "seller") {
+      setSellerFilter(value);
+      go(1, { seller: value });
+      closePicker();
+      return;
+    }
+
+    if (kind === "brand") {
+      setBrandFilter(value);
+      go(1, { brand: value });
+      closePicker();
+      return;
+    }
+
+    setCategoryFilter(value);
+    go(1, { category: value });
+    closePicker();
+  }
+
   return (
     <div className="min-h-screen w-full">
       {/* STICKY TOP */}
       <div className="sticky top-0 z-50 border-b border-white/10 bg-black/55 backdrop-blur-xl">
-        <div className={`${container} pt-6 pb-4 md:pt-7 md:pb-5`}>
-          {/* ROW A */}
-          <div className="relative flex items-center justify-center">
-            <Link
-              href="/"
-              className={`${chipBase} absolute left-0 top-1/2 -translate-y-1/2`}
-              title="Home"
-            >
-              ← Home
-            </Link>
+        <div className={`${container} pt-3 pb-3 sm:pt-7 sm:pb-5`}>
+          {/* ✅ MOBILE HEADER (centrato + bilanciato) */}
+          <div className={mobileWrap}>
+            {/* row A */}
+            <div className="grid grid-cols-[40px_1fr_40px] gap-2 items-center">
+              <Link href="/" className={navCircle} title="Home" aria-label="Home">
+                ←
+              </Link>
 
-            <div className="relative w-full max-w-[780px] px-12 md:px-0">
-              <input
-                ref={inputRef}
-                value={q}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (!v.trim()) {
-                    resetFiltersKeepOrder();
-                    return;
-                  }
-                  setQ(v);
-                  scheduleSearch(v);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    resetFiltersKeepOrder();
-                  }
-                  if (e.key === "Enter") {
-                    go(1, { q });
-                  }
-                }}
-                placeholder="Cerca (brand, seller, categoria, titolo)…"
-                className="h-10 md:h-11 w-full rounded-full px-4 pr-10 bg-white/5 border border-white/10 text-sm text-white/90 outline-none focus:border-white/25"
-              />
-              {q && (
-                <button
-                  type="button"
-                  onClick={resetFiltersKeepOrder}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 text-sm transition"
-                  title="Svuota"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </div>
+              <div className="relative">
+                <input
+                  ref={inputRef}
+                  value={q}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v.trim()) {
+                      resetFiltersKeepOrder();
+                      return;
+                    }
+                    setQ(v);
+                    scheduleSearch(v);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      resetFiltersKeepOrder();
+                    }
+                    if (e.key === "Enter") {
+                      go(1, { q });
+                    }
+                  }}
+                  placeholder="Cerca (brand, seller, categoria, titolo)…"
+                  className={searchInput}
+                />
 
-          {/* ROW B */}
-          <div className="mt-4 flex justify-center">
-            <div className="w-full max-w-[1200px] flex flex-wrap items-center justify-center gap-2">
-              <select
-                value={sortMode}
-                onChange={(e) => setSortMode(e.target.value as SortMode)}
-                style={{ colorScheme: "dark" }}
-                className={`${selectClass} w-[170px] md:w-[190px]`}
-              >
-                <option value="default">Ordina</option>
-                <option value="price_desc">Prezzo ↓</option>
-                <option value="price_asc">Prezzo ↑</option>
-              </select>
-
-              <select
-                value={sellerFilter}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setSellerFilter(v);
-                  go(1, { seller: v });
-                }}
-                style={{ colorScheme: "dark" }}
-                className={`${selectClass} w-[170px] md:w-[190px]`}
-              >
-                <option value="all">Seller: Tutti</option>
-                {sellers.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={brandFilter}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setBrandFilter(v);
-                  go(1, { brand: v });
-                }}
-                style={{ colorScheme: "dark" }}
-                className={`${selectClass} w-[170px] md:w-[190px]`}
-              >
-                <option value="all">Brand: Tutti</option>
-                {brands.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                value={categoryFilter}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setCategoryFilter(v);
-                  go(1, { category: v });
-                }}
-                style={{ colorScheme: "dark" }}
-                className={`${selectClass} w-[170px] md:w-[190px]`}
-              >
-                <option value="all">Categoria: Tutte</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                type="button"
-                onClick={resetAll}
-                className={[
-                  btnCompact,
-                  hasFilters
-                    ? "border-white/12 bg-white/[0.06]"
-                    : "opacity-55 hover:opacity-80",
-                ].join(" ")}
-                title="Pulisci filtri"
-              >
-                Reset
-              </button>
-            </div>
-          </div>
-
-          {/* ROW C */}
-          {hasFilters ? (
-            <div className="mt-3 flex justify-center">
-              <div className="w-full max-w-[1200px] flex items-center gap-2 overflow-x-auto whitespace-nowrap px-1 [-webkit-overflow-scrolling:touch]">
-                {q.trim() ? (
-                  <FilterChip
-                    label={`Ricerca: ${q.trim()}`}
-                    onClear={resetFiltersKeepOrder}
-                  />
-                ) : null}
-
-                {sellerFilter !== "all" ? (
-                  <FilterChip
-                    label={`Seller: ${sellerFilter}`}
-                    onClear={() => {
-                      setSellerFilter("all");
-                      go(1, { seller: "all" });
-                    }}
-                  />
-                ) : null}
-
-                {brandFilter !== "all" ? (
-                  <FilterChip
-                    label={`Brand: ${brandFilter}`}
-                    onClear={() => {
-                      setBrandFilter("all");
-                      go(1, { brand: "all" });
-                    }}
-                  />
-                ) : null}
-
-                {categoryFilter !== "all" ? (
-                  <FilterChip
-                    label={`Categoria: ${categoryFilter}`}
-                    onClear={() => {
-                      setCategoryFilter("all");
-                      go(1, { category: "all" });
-                    }}
-                  />
-                ) : null}
-
-                {sortMode !== "default" ? (
-                  <FilterChip
-                    label={sortLabel}
-                    onClear={() => setSortMode("default")}
-                  />
-                ) : null}
+                {q && (
+                  <button
+                    type="button"
+                    onClick={resetFiltersKeepOrder}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 text-sm transition"
+                    title="Svuota"
+                    aria-label="Svuota"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
-            </div>
-          ) : (
-            <div className="mt-3 text-center text-[11px] text-white/45">
-              Tip: premi <span className="text-white/70 font-semibold">/</span>{" "}
-              per cercare
-            </div>
-          )}
 
-          {/* ROW D */}
-          <div className="mt-4 flex items-center justify-between gap-2">
-            <div className="text-[12px] text-white/55">
-              {totalLabel}:{" "}
-              <span className="text-white/90 font-semibold">{totalItems}</span>
-              <span className="ml-3 text-white/35">
-                Pag {page}/{totalPages}
-              </span>
+              {/* spacer per bilanciare visivamente */}
+              <div className="h-10 w-10" aria-hidden="true" />
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            {/* row B */}
+            <div className="mt-2 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={shuffleNow}
-                className={shufflePrimaryClass}
-                title="Mischia articoli"
+                onClick={() => setFiltersOpen((v) => !v)}
+                className={pillSecondary}
+                title={filtersOpen ? "Chiudi filtri" : "Apri filtri"}
               >
+                {filtersOpen ? "Chiudi filtri" : "Filtri"}
+              </button>
+
+              <button type="button" onClick={shuffleNow} className={shufflePrimaryClass} title="Mischia articoli">
                 <ShuffleIcon className="h-[18px] w-[18px]" />
                 Shuffle
               </button>
+            </div>
+
+            {/* row C: PANEL FILTRI (mobile) */}
+            {filtersOpen && (
+              <div className={`mt-3 ${panel}`}>
+                <div className={panelInner}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" className={pickerBtn} onClick={() => openPicker("sort")}>
+                      <span className="truncate">{labelFor("sort")}</span>
+                      <span className="text-white/55">
+                        <ChevronDown />
+                      </span>
+                    </button>
+
+                    <button type="button" className={pickerBtn} onClick={() => openPicker("seller")}>
+                      <span className="truncate">{labelFor("seller")}</span>
+                      <span className="text-white/55">
+                        <ChevronDown />
+                      </span>
+                    </button>
+
+                    <button type="button" className={pickerBtn} onClick={() => openPicker("brand")}>
+                      <span className="truncate">{labelFor("brand")}</span>
+                      <span className="text-white/55">
+                        <ChevronDown />
+                      </span>
+                    </button>
+
+                    <button type="button" className={pickerBtn} onClick={() => openPicker("category")}>
+                      <span className="truncate">{labelFor("category")}</span>
+                      <span className="text-white/55">
+                        <ChevronDown />
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={resetAll}
+                      className={`col-span-2 ${resetMobile} ${hasFilters ? "border-white/12 bg-white/[0.06]" : "opacity-70"}`}
+                      title="Pulisci filtri"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* chips attivi (mobile + desktop) */}
+            {hasFilters ? (
+              <div className="mt-3">
+                <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap px-1 [-webkit-overflow-scrolling:touch]">
+                  {q.trim() ? (
+                    <FilterChip label={`Ricerca: ${q.trim()}`} onClear={resetFiltersKeepOrder} />
+                  ) : null}
+
+                  {sellerFilter !== "all" ? (
+                    <FilterChip
+                      label={`Seller: ${sellerFilter}`}
+                      onClear={() => {
+                        setSellerFilter("all");
+                        go(1, { seller: "all" });
+                      }}
+                    />
+                  ) : null}
+
+                  {brandFilter !== "all" ? (
+                    <FilterChip
+                      label={`Brand: ${brandFilter}`}
+                      onClear={() => {
+                        setBrandFilter("all");
+                        go(1, { brand: "all" });
+                      }}
+                    />
+                  ) : null}
+
+                  {categoryFilter !== "all" ? (
+                    <FilterChip
+                      label={`Categoria: ${categoryFilter}`}
+                      onClear={() => {
+                        setCategoryFilter("all");
+                        go(1, { category: "all" });
+                      }}
+                    />
+                  ) : null}
+
+                  {sortMode !== "default" ? (
+                    <FilterChip label={sortLabel} onClear={() => setSortMode("default")} />
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Totali (mobile) */}
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="text-[12px] text-white/55">
+                {totalLabel}: <span className="text-white/90 font-semibold">{totalItems}</span>
+              </div>
+              <div className="text-[12px] text-white/35 whitespace-nowrap">
+                Pag {page}/{totalPages}
+              </div>
+            </div>
+          </div>
+
+          {/* ✅ DESKTOP HEADER (invariato) */}
+          <div className="hidden sm:block">
+            {/* ROW A desktop */}
+            <div className="relative flex items-center justify-center">
+              <Link
+                href="/"
+                className={`${chipBase} absolute left-0 top-1/2 -translate-y-1/2 hidden sm:inline-flex`}
+                title="Home"
+              >
+                ← Home
+              </Link>
+
+              <div className="relative w-full max-w-[780px] px-10 sm:px-12 md:px-0">
+                <input
+                  ref={inputRef}
+                  value={q}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v.trim()) {
+                      resetFiltersKeepOrder();
+                      return;
+                    }
+                    setQ(v);
+                    scheduleSearch(v);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      resetFiltersKeepOrder();
+                    }
+                    if (e.key === "Enter") {
+                      go(1, { q });
+                    }
+                  }}
+                  placeholder="Cerca (brand, seller, categoria, titolo)…"
+                  className="h-11 w-full rounded-full px-4 pr-10 bg-white/5 border border-white/10 text-sm text-white/90 outline-none focus:border-white/25"
+                />
+
+                {q && (
+                  <button
+                    type="button"
+                    onClick={resetFiltersKeepOrder}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 text-sm transition"
+                    title="Svuota"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* ROW B desktop */}
+            <div className="mt-4 flex justify-center">
+              <div className="w-full max-w-[1200px] flex flex-wrap items-center justify-center gap-2">
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as SortMode)}
+                  style={{ colorScheme: "dark" }}
+                  className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
+                >
+                  <option value="default">Ordina</option>
+                  <option value="price_desc">Prezzo ↓</option>
+                  <option value="price_asc">Prezzo ↑</option>
+                </select>
+
+                <select
+                  value={sellerFilter}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setSellerFilter(v);
+                    go(1, { seller: v });
+                  }}
+                  style={{ colorScheme: "dark" }}
+                  className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
+                >
+                  <option value="all">Seller: Tutti</option>
+                  {sellers.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={brandFilter}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setBrandFilter(v);
+                    go(1, { brand: v });
+                  }}
+                  style={{ colorScheme: "dark" }}
+                  className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
+                >
+                  <option value="all">Brand: Tutti</option>
+                  {brands.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCategoryFilter(v);
+                    go(1, { category: v });
+                  }}
+                  style={{ colorScheme: "dark" }}
+                  className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
+                >
+                  <option value="all">Categoria: Tutte</option>
+                  {categories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className={[
+                    btnCompact,
+                    hasFilters ? "border-white/12 bg-white/[0.06]" : "opacity-55 hover:opacity-80",
+                  ].join(" ")}
+                  title="Pulisci filtri"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            {/* ROW C desktop: chips */}
+            {hasFilters ? (
+              <div className="mt-3 flex justify-center">
+                <div className="w-full max-w-[1200px] flex items-center gap-2 overflow-x-auto whitespace-nowrap px-1 [-webkit-overflow-scrolling:touch]">
+                  {q.trim() ? (
+                    <FilterChip label={`Ricerca: ${q.trim()}`} onClear={resetFiltersKeepOrder} />
+                  ) : null}
+
+                  {sellerFilter !== "all" ? (
+                    <FilterChip
+                      label={`Seller: ${sellerFilter}`}
+                      onClear={() => {
+                        setSellerFilter("all");
+                        go(1, { seller: "all" });
+                      }}
+                    />
+                  ) : null}
+
+                  {brandFilter !== "all" ? (
+                    <FilterChip
+                      label={`Brand: ${brandFilter}`}
+                      onClear={() => {
+                        setBrandFilter("all");
+                        go(1, { brand: "all" });
+                      }}
+                    />
+                  ) : null}
+
+                  {categoryFilter !== "all" ? (
+                    <FilterChip
+                      label={`Categoria: ${categoryFilter}`}
+                      onClear={() => {
+                        setCategoryFilter("all");
+                        go(1, { category: "all" });
+                      }}
+                    />
+                  ) : null}
+
+                  {sortMode !== "default" ? (
+                    <FilterChip label={sortLabel} onClear={() => setSortMode("default")} />
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {/* ROW D desktop */}
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <div className="text-[12px] text-white/55">
+                {totalLabel}: <span className="text-white/90 font-semibold">{totalItems}</span>
+                <span className="ml-3 text-white/35">
+                  Pag {page}/{totalPages}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={shuffleNow}
+                  className={shufflePrimaryClass}
+                  title="Mischia articoli"
+                >
+                  <ShuffleIcon className="h-[18px] w-[18px]" />
+                  Shuffle
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -885,9 +1136,7 @@ export default function SpreadsheetClient({
       <div className={`${container} pt-6 pb-14`}>
         {noResults ? (
           <div className="mx-auto max-w-[520px] text-center rounded-3xl border border-white/10 bg-white/[0.04] p-8">
-            <div className="text-white/90 font-semibold text-lg">
-              Nessun risultato
-            </div>
+            <div className="text-white/90 font-semibold text-lg">Nessun risultato</div>
             <div className="mt-2 text-sm text-white/55">
               Prova a cambiare filtri o cercare un termine diverso.
             </div>
@@ -910,7 +1159,13 @@ export default function SpreadsheetClient({
           </div>
         ) : (
           <>
-            <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div
+              className={[
+                "grid gap-4",
+                "grid-cols-1 min-[420px]:grid-cols-2",
+                "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7",
+              ].join(" ")}
+            >
               {filtered.map((x) => {
                 const meta = [x.seller, x.category].filter(Boolean).join(" • ");
                 return (
@@ -973,9 +1228,7 @@ export default function SpreadsheetClient({
                       </div>
 
                       {meta ? (
-                        <div className="mt-2 text-[11px] text-white/55 truncate">
-                          {meta}
-                        </div>
+                        <div className="mt-2 text-[11px] text-white/55 truncate">{meta}</div>
                       ) : (
                         <div className="mt-2 h-[16px]" />
                       )}
@@ -999,9 +1252,7 @@ export default function SpreadsheetClient({
                     href={prevHref ?? "#"}
                     className={[
                       "h-11 w-12 inline-flex items-center justify-center transition",
-                      prevHref
-                        ? "text-white/85 hover:bg-white/8"
-                        : "text-white/35 pointer-events-none",
+                      prevHref ? "text-white/85 hover:bg-white/8" : "text-white/35 pointer-events-none",
                     ].join(" ")}
                     title="Pagina precedente"
                   >
@@ -1018,9 +1269,7 @@ export default function SpreadsheetClient({
                     href={nextHref ?? "#"}
                     className={[
                       "h-11 w-12 inline-flex items-center justify-center transition",
-                      nextHref
-                        ? "text-white/85 hover:bg-white/8"
-                        : "text-white/35 pointer-events-none",
+                      nextHref ? "text-white/85 hover:bg-white/8" : "text-white/35 pointer-events-none",
                     ].join(" ")}
                     title="Pagina successiva"
                   >
@@ -1042,6 +1291,77 @@ export default function SpreadsheetClient({
           ↑ Su
         </button>
       )}
+
+      {/* ✅ MOBILE CUSTOM PICKER (bottom-sheet) */}
+      {pickerOpen ? (
+        <div className="sm:hidden fixed inset-0 z-[100]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+            onClick={closePicker}
+            aria-label="Chiudi"
+          />
+          <div className="absolute inset-x-0 bottom-0">
+            <div className="mx-auto w-full max-w-[520px] rounded-t-3xl border border-white/10 bg-black/85 backdrop-blur-xl shadow-[0_-30px_120px_rgba(0,0,0,0.65)]">
+              <div className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-white/90 font-semibold text-[15px]">{pickerData.title}</div>
+                  <button
+                    type="button"
+                    onClick={closePicker}
+                    className="h-9 w-9 rounded-full border border-white/10 bg-white/5 hover:bg-white/8 text-white/80 transition"
+                    aria-label="Chiudi"
+                    title="Chiudi"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {pickerNeedsSearch ? (
+                  <div className="mt-3">
+                    <input
+                      value={pickerQuery}
+                      onChange={(e) => setPickerQuery(e.target.value)}
+                      placeholder="Cerca…"
+                      className="h-11 w-full rounded-full px-4 bg-white/5 border border-white/10 text-[14px] text-white/90 outline-none focus:border-white/25"
+                    />
+                  </div>
+                ) : null}
+
+                <div className="mt-3 max-h-[60vh] overflow-auto -mx-2 px-2 pb-2 [-webkit-overflow-scrolling:touch]">
+                  {pickerFilteredOptions.map((opt) => {
+                    const current = pickerCurrentValue(pickerOpen);
+                    const selected = String(current) === String(opt.value);
+                    return (
+                      <button
+                        key={`${pickerOpen}:${opt.value}`}
+                        type="button"
+                        onClick={() => applyPickerValue(pickerOpen, opt.value)}
+                        className={[
+                          "w-full h-12 px-4 rounded-2xl flex items-center justify-between text-left transition",
+                          "border border-transparent",
+                          selected
+                            ? "bg-white/10 border-white/10"
+                            : "hover:bg-white/7",
+                        ].join(" ")}
+                      >
+                        <span className="text-[15px] text-white/90 truncate">{opt.label}</span>
+                        {selected ? <span className="text-white/70 text-[14px]">✓</span> : null}
+                      </button>
+                    );
+                  })}
+
+                  {pickerFilteredOptions.length === 0 ? (
+                    <div className="py-10 text-center text-white/45 text-sm">Nessun risultato</div>
+                  ) : null}
+                </div>
+
+                <div className="h-4" />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

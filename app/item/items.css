@@ -23,10 +23,15 @@
   filter: saturate(1.1);
 }
 
+/* ✅ container: niente “compresso” + safe-area */
 .it-container {
-  width: min(1280px, 92vw);
+  max-width: 1280px;
+  width: 100%;
   margin: 0 auto;
-  padding: 28px 0 70px;
+
+  padding-top: calc(28px + env(safe-area-inset-top));
+  padding-bottom: calc(70px + env(safe-area-inset-bottom));
+  padding-inline: clamp(16px, 4vw, 28px);
 }
 
 /* =========================
@@ -113,6 +118,30 @@
   opacity: 0.55;
 }
 
+/* ✅ FIX: meta pills (SELLER / CATEGORIA / FOTO) */
+.it-metaRow{
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.it-pill{
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.035);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
 /* =========================
    Layout (gallery + sidebar)
 ========================= */
@@ -122,16 +151,21 @@
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 22px;
   align-items: start;
+
+  position: relative;
 }
 
 .it-left {
   min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .it-right {
   position: sticky;
   top: 18px;
   align-self: start;
+  z-index: 10;
 }
 
 /* =========================
@@ -244,26 +278,31 @@
   border-color: rgba(255,255,255,0.20);
 }
 
-/* ✅ LOGHI AGENT: niente patina + più puliti */
-.it-agentbtn-logo {
+/* ✅ LOGHI AGENT: puliti */
+.it-agentbtn-logo{
   width: 42px;
   height: 42px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.95);
+  background: #fff !important;
   border: 1px solid rgba(255,255,255,0.16);
   display: grid;
   place-items: center;
   overflow: hidden;
 }
-
-.it-agentbtn-logo img {
+.it-agentbtn-logo img{
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  background: transparent;
-  border: 0;
-  filter: none;
-  opacity: 1;
+  display: block;
+  object-fit: contain !important;
+  background: transparent !important;
+  filter: none !important;
+  opacity: 1 !important;
+  mix-blend-mode: normal !important;
+}
+.it-agentbtn:not(.is-disabled) .it-agentbtn-logo,
+.it-agentbtn:not(.is-disabled) .it-agentbtn-logo img{
+  filter: none !important;
+  opacity: 1 !important;
 }
 
 .it-agentbtn-text {
@@ -273,13 +312,11 @@
 }
 
 .it-agentbtn--usfans {
-  background:
-    linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.04));
+  background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.04));
 }
 
 .it-agentbtn--mulebuy {
-  background:
-    linear-gradient(90deg, rgba(160,120,255,0.35), rgba(255,255,255,0.04));
+  background: linear-gradient(90deg, rgba(160,120,255,0.35), rgba(255,255,255,0.04));
 }
 
 .it-agentbtn--soon {
@@ -482,135 +519,8 @@
   background: rgba(0,0,0,0.45);
 }
 
-/* Thumbnails */
-.it-galleryThumbs {
-  margin-top: 12px;
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding: 2px 2px 8px;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-}
-
-.it-galleryThumbs.is-dragging {
-  cursor: grabbing;
-  user-select: none;
-}
-
-.it-galleryThumb {
-  flex: 0 0 auto;
-  width: 86px;
-  height: 64px;
-
-  border-radius: 16px;
-  overflow: hidden;
-
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.03);
-
-  scroll-snap-align: center;
-  cursor: pointer;
-
-  transition: transform 150ms ease, border-color 150ms ease;
-}
-
-.it-galleryThumb:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255,255,255,0.22);
-}
-
-.it-galleryThumb[data-active="1"] {
-  border-color: rgba(255,255,255,0.60);
-  transform: translateY(-1px);
-}
-
-.it-galleryThumbImg {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
 /* =========================
-   Responsive
-========================= */
-
-@media (max-width: 1080px) {
-  .it-main { grid-template-columns: 1fr; }
-  .it-right { position: relative; top: auto; }
-  .it-priceValue { font-size: 34px; }
-}
-
-@media (max-width: 560px) {
-  .it-container { width: min(92vw, 560px); }
-  .it-title { font-size: 34px; }
-  .it-subline { font-size: 12px; gap: 8px; padding: 7px 10px; }
-  .it-galleryHero { height: min(55vh, 460px); }
-  .it-galleryThumb { width: 78px; height: 58px; }
-}
-
-/* ✅ FIX LOGHI AGENT (override finale) */
-.it-agentbtn-logo{
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: #fff !important;
-  border: 1px solid rgba(255,255,255,0.16);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-
-.it-agentbtn-logo img{
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: contain !important;
-  background: transparent !important;
-  filter: none !important;
-  opacity: 1 !important;
-  mix-blend-mode: normal !important;
-}
-.it-agentbtn:not(.is-disabled) .it-agentbtn-logo,
-.it-agentbtn:not(.is-disabled) .it-agentbtn-logo img{
-  filter: none !important;
-  opacity: 1 !important;
-}
-
-/* =========================
-   FIX THUMBS: niente schiacciamento + NO scrollbar bianca
-========================= */
-
-.it-galleryThumbs{
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  padding-bottom: 6px;
-}
-.it-galleryThumbs::-webkit-scrollbar{ height: 0px; }
-
-.it-galleryThumb{
-  width: 86px !important;
-  height: 64px !important;
-  flex: 0 0 auto;
-}
-.it-galleryThumbImg{
-  width: 100% !important;
-  height: 100% !important;
-  display: block;
-  object-fit: cover !important;
-}
-@media (max-width: 560px){
-  .it-galleryThumb{
-    width: 78px !important;
-    height: 58px !important;
-  }
-}
-
-/* =========================
-   APPLE STYLE THUMBS (override finale)
+   Thumbnails (Apple style)
 ========================= */
 
 .it-galleryThumbs{
@@ -633,8 +543,16 @@
 
   scrollbar-width: none;
   -ms-overflow-style: none;
+
+  touch-action: pan-y; /* evita che il drag rompa i tap */
+  cursor: grab;
 }
 .it-galleryThumbs::-webkit-scrollbar{ height: 0px; }
+
+.it-galleryThumbs.is-dragging{
+  cursor: grabbing;
+  user-select: none;
+}
 
 .it-galleryThumbs::before,
 .it-galleryThumbs::after{
@@ -657,8 +575,8 @@
 
 .it-galleryThumb{
   flex: 0 0 auto;
-  width: 92px !important;
-  height: 66px !important;
+  width: 92px;
+  height: 66px;
 
   border-radius: 18px;
   overflow: hidden;
@@ -671,10 +589,9 @@
     inset 0 1px 0 rgba(255,255,255,0.06),
     0 14px 40px rgba(0,0,0,0.55);
 
-  transition:
-    transform 180ms ease,
-    border-color 180ms ease,
-    filter 180ms ease;
+  cursor: pointer;
+
+  transition: transform 180ms ease, border-color 180ms ease, filter 180ms ease;
 }
 
 .it-galleryThumb:hover{
@@ -691,32 +608,38 @@
 }
 
 .it-galleryThumbImg{
-  width: 100% !important;
-  height: 100% !important;
+  width: 100%;
+  height: 100%;
   display: block;
-  object-fit: cover !important;
+  object-fit: cover;
   transform: scale(1.03);
 }
 
-.it-galleryThumbs.is-dragging .it-galleryThumb{
-  cursor: grabbing;
-  transform: none;
+/* =========================
+   Responsive
+========================= */
+
+@media (max-width: 1080px) {
+  .it-main { grid-template-columns: 1fr; }
+  .it-right { position: relative; top: auto; }
+  .it-priceValue { font-size: 34px; }
 }
 
-@media (max-width: 560px){
+@media (max-width: 560px) {
+  .it-title { font-size: 34px; }
+  .it-subline { font-size: 12px; gap: 8px; padding: 7px 10px; }
+  .it-galleryHero { height: min(55vh, 460px); }
+
+  .it-metaRow{ gap: 8px; }
+  .it-pill{
+    font-size: 10px;
+    padding: 6px 10px;
+    letter-spacing: 0.16em;
+  }
+
   .it-galleryThumb{
-    width: 82px !important;
-    height: 60px !important;
+    width: 82px;
+    height: 60px;
     border-radius: 16px;
   }
-}
-.it-main { position: relative; }
-.it-left { position: relative; z-index: 1; }
-.it-right { position: sticky; z-index: 10; }
-.it-galleryThumbs{
-  touch-action: pan-y; /* evita che il drag orizzontale rompa i tap su mobile */
-  cursor: grab;
-}
-.it-galleryThumbs.is-dragging{
-  cursor: grabbing;
 }

@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export type Seller = {
   name: string;
@@ -101,7 +101,7 @@ function scoreForSort(s: Seller) {
   return featured * 1_000_000 + scoreN * 10_000 + rankBoost * 100 + verified * 50 + items;
 }
 
-/** ✅ Divider “hero” */
+/** Divider “hero” */
 function BarsDivider({ size = "lg" }: { size?: "lg" | "md" }) {
   const wA = size === "lg" ? "w-24" : "w-16";
   const wB = size === "lg" ? "w-10" : "w-8";
@@ -118,7 +118,6 @@ function BarsDivider({ size = "lg" }: { size?: "lg" | "md" }) {
   );
 }
 
-/** ✅ Titoli veri (H2), non micro-eyebrow */
 function HeroSectionTitle({
   title,
   tone = "primary",
@@ -144,21 +143,350 @@ function HeroSectionTitle({
         <h2
           className={[
             "relative font-semibold tracking-[-0.01em] text-white",
-            isPrimary
-              ? "text-3xl md:text-4xl"
-              : "text-2xl md:text-3xl",
+            isPrimary ? "text-3xl md:text-4xl" : "text-2xl md:text-3xl",
           ].join(" ")}
         >
           {title}
         </h2>
 
-        {/* micro caption sopra, super discreta (apple-ish) */}
         <div className="mt-2 text-[11px] uppercase tracking-[0.38em] text-white/45">
           Curated picks
         </div>
       </div>
 
       <BarsDivider size={isPrimary ? "lg" : "md"} />
+    </div>
+  );
+}
+
+function FeaturedCard({ s }: { s: Seller }) {
+  const imgs = pickImages(s);
+  const wa = pickWhatsApp(s);
+  const specs = (s.specialties || []).slice(0, 3).map(String);
+  const itemsCount = pickItemsCount(s);
+
+  return (
+    <div className="group overflow-hidden rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl">
+      <div className="relative h-[160px] w-full overflow-hidden border-b border-white/10 bg-white/5">
+        {imgs[0] ? (
+          <img
+            src={imgs[0]}
+            alt=""
+            className="h-full w-full object-cover opacity-90 transition duration-700 group-hover:scale-[1.04]"
+            loading="lazy"
+          />
+        ) : (
+          <div className="h-full w-full" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/15 to-black/60" />
+
+        <div className="absolute bottom-0 left-0 right-0 p-4">
+          <div className="flex items-center gap-2">
+            <div className="truncate text-lg font-semibold tracking-tight text-white">
+              {String(s.name)}
+            </div>
+            {s.verified ? (
+              <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                Verificato
+              </span>
+            ) : null}
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-2">
+            {specs.length ? specs.map((x) => chip(x)) : chip("Premium")}
+            {itemsCount != null ? (
+              <span className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[11px] text-white/70">
+                {itemsCount} articoli
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4">
+        <div className="grid grid-cols-2 gap-3">
+          {wa ? (
+            <a
+              href={wa}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/85 hover:bg-white/10"
+            >
+              WhatsApp
+            </a>
+          ) : (
+            <div className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/45">
+              WhatsApp N/D
+            </div>
+          )}
+
+          <Link
+            href={pickSpreadsheetHref(String(s.name))}
+            className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/85 hover:bg-white/10"
+          >
+            Articoli →
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ✅ Carousel SOLO mobile:
+ * - loop infinito
+ * - auto-scroll (visivamente: sinistra -> destra)
+ * - fade pulito ai bordi schermo (MASK, niente overlay)
+ * - drag manuale (pausa e poi riprende)
+ */
+function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+
+  const [hasOverflow, setHasOverflow] = useState(false);
+
+  const halfRef = useRef(0);
+  const posRef = useRef(0);
+  const initedRef = useRef(false);
+
+  const paused = useRef(false);
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loopItems = useMemo(() => {
+    const base = Array.isArray(sellers) ? sellers : [];
+    return base.length ? [...base, ...base] : [];
+  }, [sellers]);
+
+  const syncPos = () => {
+    const sc = scrollerRef.current;
+    if (sc) posRef.current = sc.scrollLeft;
+  };
+
+  const pauseFor = (ms = 1400) => {
+    paused.current = true;
+    syncPos();
+
+    if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    resumeTimer.current = setTimeout(() => {
+      syncPos();
+      paused.current = false;
+    }, ms);
+  };
+
+  // misura metà loop (robusta) + overflow + init
+  useEffect(() => {
+    const sc = scrollerRef.current;
+    const tr = trackRef.current;
+    if (!sc || !tr) return;
+
+    const baseCount = Array.isArray(sellers) ? sellers.length : 0;
+
+    const measure = () => {
+      if (!baseCount) return;
+
+      const children = Array.from(tr.children) as HTMLElement[];
+      const firstHalf = children.slice(0, baseCount);
+
+      const style = window.getComputedStyle(tr);
+      const gapStr = (style.columnGap || style.gap || "0px") as string;
+      const gap = Number.parseFloat(gapStr) || 0;
+
+      let half = 0;
+      firstHalf.forEach((el, i) => {
+        half += el.offsetWidth;
+        if (i !== firstHalf.length - 1) half += gap;
+      });
+
+      halfRef.current = half;
+      setHasOverflow(half > sc.clientWidth + 4);
+
+      if (!initedRef.current && half > 0) {
+        initedRef.current = true;
+        posRef.current = half; // start in mezzo
+        sc.scrollLeft = half;
+      }
+    };
+
+    const r1 = requestAnimationFrame(measure);
+    const t2 = setTimeout(measure, 250);
+
+    const onResize = () => measure();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelAnimationFrame(r1);
+      clearTimeout(t2);
+      window.removeEventListener("resize", onResize);
+      if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    };
+  }, [sellers, loopItems.length]);
+
+  // auto-loop (lento) — disabilita se reduced motion
+  useEffect(() => {
+    const sc = scrollerRef.current;
+    if (!sc) return;
+
+    const prefersReduced =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (prefersReduced) return;
+
+    let raf = 0;
+    let last = performance.now();
+
+    const SPEED = 20; // ✅ più lento
+    const DIR = -1; // decrementa => card scorrono verso destra visivamente
+
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+
+      const half = halfRef.current;
+
+      if (half > 0 && !paused.current) {
+        let next = posRef.current + DIR * SPEED * dt;
+
+        // wrap morbido (0..half]
+        if (next <= 0) next += half;
+        if (next > half) next -= half;
+
+        posRef.current = next;
+        sc.scrollLeft = next;
+      }
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [loopItems.length]);
+
+  // pausa su input utente
+  useEffect(() => {
+    const sc = scrollerRef.current;
+    if (!sc) return;
+
+    const onWheel = () => pauseFor(1200);
+    const onTouch = () => pauseFor(1600);
+
+    sc.addEventListener("wheel", onWheel, { passive: true });
+    sc.addEventListener("touchstart", onTouch, { passive: true });
+    sc.addEventListener("touchmove", onTouch, { passive: true });
+
+    return () => {
+      sc.removeEventListener("wheel", onWheel);
+      sc.removeEventListener("touchstart", onTouch);
+      sc.removeEventListener("touchmove", onTouch);
+    };
+  }, []);
+
+  // drag pointer
+  useEffect(() => {
+    const sc = scrollerRef.current;
+    if (!sc) return;
+
+    const st = { down: false, x: 0, left: 0, pid: -1, moved: false };
+    const THRESH = 6;
+
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      st.down = true;
+      st.moved = false;
+      st.x = e.clientX;
+      st.left = sc.scrollLeft;
+      st.pid = e.pointerId;
+      paused.current = true;
+      syncPos();
+      try {
+        sc.setPointerCapture(e.pointerId);
+      } catch {}
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (!st.down) return;
+      const dx = e.clientX - st.x;
+      if (!st.moved && Math.abs(dx) < THRESH) return;
+      st.moved = true;
+      sc.scrollLeft = st.left - dx;
+      syncPos();
+    };
+
+    const onUp = () => {
+      if (!st.down) return;
+      st.down = false;
+      try {
+        sc.releasePointerCapture(st.pid);
+      } catch {}
+      pauseFor(1400);
+    };
+
+    sc.addEventListener("pointerdown", onDown);
+    sc.addEventListener("pointermove", onMove);
+    sc.addEventListener("pointerup", onUp);
+    sc.addEventListener("pointercancel", onUp);
+    sc.addEventListener("pointerleave", onUp);
+
+    return () => {
+      sc.removeEventListener("pointerdown", onDown);
+      sc.removeEventListener("pointermove", onMove);
+      sc.removeEventListener("pointerup", onUp);
+      sc.removeEventListener("pointercancel", onUp);
+      sc.removeEventListener("pointerleave", onUp);
+    };
+  }, []);
+
+  if (!sellers.length) return null;
+
+  // ✅ fade “pulito” con mask (niente overlay)
+  const FADE = 38; // px (aumenta a 44 se lo vuoi più morbido)
+
+  return (
+    <div className="md:hidden mt-10 relative w-screen left-1/2 -translate-x-1/2">
+      <div
+        ref={scrollerRef}
+        className={[
+          "relative z-10 overflow-x-auto overflow-y-hidden",
+          "[-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          // ✅ padding interno (le card non finiscono sotto il fade)
+          "pl-[calc(16px+env(safe-area-inset-left))] pr-[calc(16px+env(safe-area-inset-right))]",
+        ].join(" ")}
+        style={{
+          scrollBehavior: "auto",
+          touchAction: "pan-x",
+          ...(hasOverflow
+            ? {
+                WebkitMaskImage: `linear-gradient(to right,
+                  transparent 0px,
+                  black ${FADE}px,
+                  black calc(100% - ${FADE}px),
+                  transparent 100%)`,
+                maskImage: `linear-gradient(to right,
+                  transparent 0px,
+                  black ${FADE}px,
+                  black calc(100% - ${FADE}px),
+                  transparent 100%)`,
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskSize: "100% 100%",
+                maskSize: "100% 100%",
+              }
+            : {}),
+        }}
+      >
+        <div ref={trackRef} className="flex gap-4 py-2 w-max">
+          {loopItems.map((s, idx) => (
+            <div key={`${String(s.name)}-${idx}`} className="shrink-0 w-[78vw] max-w-[420px]">
+              <FeaturedCard s={s} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 text-center text-[11px] text-white/40">
+        Scorre in automatico — puoi comunque trascinare
+      </div>
     </div>
   );
 }
@@ -193,7 +521,6 @@ export default function SellersDirectory({ sellers }: { sellers: Seller[] }) {
 
   return (
     <div className="relative min-h-screen">
-      {/* ✅ Home fixed in alto a sinistra */}
       <Link
         href="/"
         className="fixed left-5 top-5 z-50 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-4 py-2 text-sm text-white/85 backdrop-blur hover:bg-white/10 md:left-8 md:top-8"
@@ -201,7 +528,6 @@ export default function SellersDirectory({ sellers }: { sellers: Seller[] }) {
         ← Home
       </Link>
 
-      {/* background glow */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -top-32 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-white/10 blur-3xl" />
         <div className="absolute top-[30%] right-[-120px] h-[420px] w-[420px] rounded-full bg-white/5 blur-3xl" />
@@ -209,94 +535,20 @@ export default function SellersDirectory({ sellers }: { sellers: Seller[] }) {
       </div>
 
       <div className="relative mx-auto w-full max-w-6xl px-4 pb-14 pt-24 md:px-8 md:pt-28">
-        {/* ====== TOP: Best seller of the month ====== */}
         <section className="mb-16">
           <HeroSectionTitle title="Best seller of the month" tone="primary" />
 
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {featured.map((s) => {
-              const imgs = pickImages(s);
-              const wa = pickWhatsApp(s);
-              const specs = (s.specialties || []).slice(0, 4).map(String);
-              const itemsCount = pickItemsCount(s);
-
-              return (
-                <div
-                  key={String(s.name)}
-                  className="group overflow-hidden rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl"
-                >
-                  <div className="relative h-[170px] w-full overflow-hidden border-b border-white/10 bg-white/5">
-                    {imgs[0] ? (
-                      <img
-                        src={imgs[0]}
-                        alt=""
-                        className="h-full w-full object-cover opacity-90 transition duration-700 group-hover:scale-[1.04]"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="h-full w-full" />
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/15 to-black/60" />
-
-                    <div className="absolute bottom-0 left-0 right-0 p-4">
-                      <div className="flex items-center gap-2">
-                        <div className="truncate text-lg font-semibold tracking-tight text-white">
-                          {String(s.name)}
-                        </div>
-                        {s.verified ? (
-                          <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                            Verificato
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {specs.length ? specs.map((x) => chip(x)) : chip("Premium")}
-                        {itemsCount != null ? (
-                          <span className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[11px] text-white/70">
-                            {itemsCount} articoli
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      {wa ? (
-                        <a
-                          href={wa}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/85 hover:bg-white/10"
-                        >
-                          WhatsApp
-                        </a>
-                      ) : (
-                        <div className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/45">
-                          WhatsApp N/D
-                        </div>
-                      )}
-
-                      <Link
-                        href={pickSpreadsheetHref(String(s.name))}
-                        className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/85 hover:bg-white/10"
-                      >
-                        Vai agli articoli →
-                      </Link>
-                    </div>
-
-                    <div className="mt-3 text-xs text-white/45">
-                      Link: articoli filtrati in spreadsheet.
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          {/* DESKTOP/TABLET */}
+          <div className="hidden md:grid mt-10 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {featured.map((s) => (
+              <FeaturedCard key={String(s.name)} s={s} />
+            ))}
           </div>
+
+          {/* MOBILE */}
+          <FeaturedCarouselMobile sellers={featured} />
         </section>
 
-        {/* ====== BOTTOM: Best seller ====== */}
         <section>
           <HeroSectionTitle title="Best seller" tone="secondary" />
 
@@ -326,9 +578,7 @@ export default function SellersDirectory({ sellers }: { sellers: Seller[] }) {
                       {specs.length ? (
                         specs.map((x) => chip(x))
                       ) : (
-                        <span className="text-[11px] text-white/45">
-                          Nessuna specialty
-                        </span>
+                        <span className="text-[11px] text-white/45">Nessuna specialty</span>
                       )}
                     </div>
                   </div>

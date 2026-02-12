@@ -13,7 +13,6 @@ import { getSellersFromSheet } from "@/data/sellersFromSheet";
 export const runtime = "nodejs";
 export const revalidate = 300;
 
-// ✅ Tipo locale: non importiamo più Seller da SellersHomeTeaser (non è esportato)
 type Seller = {
   name: string;
   verified?: boolean;
@@ -34,10 +33,16 @@ function toPlainSeller(r: any): Seller | null {
 
   return {
     name,
-    verified: Boolean(r?.verified ?? r?.Verified ?? r?.verificato ?? r?.Verificato ?? false),
+    verified: Boolean(
+      r?.verified ?? r?.Verified ?? r?.verificato ?? r?.Verificato ?? false
+    ),
     specialties: toStringArr(r?.specialties ?? r?.Specialties ?? r?.tags),
-    previewImages: toStringArr(r?.previewImages ?? r?.preview_images ?? r?.images ?? r?.preview),
-    whatsapp: String(r?.whatsapp ?? r?.wa ?? r?.whatsappUrl ?? r?.contact ?? r?.whats ?? "").trim(),
+    previewImages: toStringArr(
+      r?.previewImages ?? r?.preview_images ?? r?.images ?? r?.preview
+    ),
+    whatsapp: String(
+      r?.whatsapp ?? r?.wa ?? r?.whatsappUrl ?? r?.contact ?? r?.whats ?? ""
+    ).trim(),
   };
 }
 
@@ -64,19 +69,20 @@ export default async function HomePage() {
 
   return (
     <main className="cc-home">
-      {/* 1) HERO (ellisse/hero) */}
+      {/* 1) HERO */}
       <section className="cc-section cc-section--hero">
         <HeroCarousel />
         <div className="cc-scrollHint">SCROLL ↓</div>
       </section>
 
-      {/* 2) SPREADSHEET */}
+      {/* 2) SPREADSHEET (decor solo orbs, NO sagome) */}
       <ParallaxSection
         id="spreadsheet"
         eyebrow=""
         title="Spreadsheet"
         description="I migliori finds per tutti i tuoi haul."
         childrenWidth="wide"
+        decor="orbs"
       >
         <div className="sheet-ctaRow">
           <Link href="/spreadsheet" className="sheet-cta">
@@ -90,10 +96,10 @@ export default async function HomePage() {
         </div>
       </ParallaxSection>
 
-      {/* 3) SELLERS */}
+      {/* 3) SELLERS (qui restano le sagome / parallax) */}
       <SellersHomeTeaser sellers={preview} />
 
-      {/* 4) QUALITY CHECK (✅ NO PARALLAX: sezione normale) */}
+      {/* 4) QUALITY CHECK (sezione normale) */}
       <section className="cc-section" id="quality-check">
         <div className="cc-section-wrap">
           <div className="cc-container">
@@ -112,18 +118,18 @@ export default async function HomePage() {
               </div>
             </div>
 
-            {/* ✅ Animazione SEMPRE attiva (gestita dal componente) */}
             <QualityCheckHomeTeaser />
           </div>
         </div>
       </section>
 
-      {/* 5) COUPON (COMING SOON) */}
+      {/* 5) COUPON (decor solo orbs, NO sagome) */}
       <ParallaxSection
         id="coupons"
         eyebrow="SAVINGS"
         title="Coupon"
         description="Codici sconto aggiornati e link rapidi per risparmiare subito."
+        decor="orbs"
       >
         <div className="sheet-ctaRow" style={{ alignItems: "center" }}>
           <ComingSoonPill />
@@ -138,12 +144,13 @@ export default async function HomePage() {
         </div>
       </ParallaxSection>
 
-      {/* 6) TUTORIAL (COMING SOON) */}
+      {/* 6) TUTORIAL (decor solo orbs, NO sagome) */}
       <ParallaxSection
         id="tutorials"
         eyebrow="GUIDE"
         title="Tutorial"
         description="Guide snelle per comprare senza perdere tempo: agent, spedizioni, QC e tips."
+        decor="orbs"
       >
         <div className="sheet-ctaRow" style={{ alignItems: "center" }}>
           <ComingSoonPill />

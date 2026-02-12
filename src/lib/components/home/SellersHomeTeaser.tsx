@@ -18,19 +18,41 @@ export type Seller = {
 
 type Props = { sellers?: Seller[] };
 
+const clamp = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+function easeInOutQuint(t: number) {
+  return t < 0.5 ? 16 * t ** 5 : 1 - Math.pow(-2 * t + 2, 5) / 2;
+}
+
+function resolveScroller(): Window | HTMLElement {
+  // se .cc-home è davvero scrollabile, usalo (spesso nei layout “app-like”)
+  const home = document.querySelector<HTMLElement>(".cc-home");
+  if (home) {
+    const s = window.getComputedStyle(home);
+    const oy = s.overflowY;
+    const canScroll = home.scrollHeight > home.clientHeight + 2;
+    if (canScroll && (oy === "auto" || oy === "scroll" || oy === "overlay")) return home;
+  }
+  return window;
+}
+
 export default function SellersHomeTeaser(_props: Props) {
   const sectionRef = useRef<HTMLElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+
+  const stageW = useRef(700);
 
   const centerRef = useRef<HTMLDivElement | null>(null);
   const leftRef = useRef<HTMLDivElement | null>(null);
   const rightRef = useRef<HTMLDivElement | null>(null);
 
   const raf = useRef<number | null>(null);
+  const running = useRef(false);
 
   // scroll loop
-  const target = useRef(0); // 0..1
-  const current = useRef(0); // smoothed 0..1
+  const target = useRef(0);
+  const current = useRef(0);
 
   // parallax (normalized -1..1)
   const pTargetX = useRef(0);
@@ -38,8 +60,15 @@ export default function SellersHomeTeaser(_props: Props) {
   const pX = useRef(0);
   const pY = useRef(0);
 
+  const touching = useRef(false);
+  const coarseRef = useRef(false);
+  const phoneRef = useRef(false);
+
+  const [isPhone, setIsPhone] = useState(false);
+
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [allowParallax, setAllowParallax] = useState(false);
+  const [allowMouseParallax, setAllowMouseParallax] = useState(false);
+  const [allowTouchParallax, setAllowTouchParallax] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -50,36 +79,92 @@ export default function SellersHomeTeaser(_props: Props) {
   }, []);
 
   useEffect(() => {
-    // parallax solo se: hover + pointer fine (mouse/trackpad)
-    const mq = window.matchMedia?.("(hover: hover) and (pointer: fine)");
-    const update = () => setAllowParallax(!!mq?.matches);
+    const mq = window.matchMedia?.("(max-width: 640px)");
+    const update = () => {
+      const v = !!mq?.matches;
+      setIsPhone(v);
+      phoneRef.current = v;
+    };
     update();
     mq?.addEventListener?.("change", update);
     return () => mq?.removeEventListener?.("change", update);
   }, []);
 
   useEffect(() => {
+    const mqMouse = window.matchMedia?.("(hover: hover) and (pointer: fine)");
+    const updateMouse = () => setAllowMouseParallax(!!mqMouse?.matches);
+    updateMouse();
+    mqMouse?.addEventListener?.("change", updateMouse);
+
+    const mqTouch = window.matchMedia?.("(pointer: coarse)");
+    const updateTouch = () => {
+      const v = !!mqTouch?.matches;
+      setAllowTouchParallax(v);
+      coarseRef.current = v;
+    };
+    updateTouch();
+    mqTouch?.addEventListener?.("change", updateTouch);
+
+    return () => {
+      mqMouse?.removeEventListener?.("change", updateMouse);
+      mqTouch?.removeEventListener?.("change", updateTouch);
+    };
+  }, []);
+
+  function startLoop() {
+    if (running.current) return;
+    running.current = true;
+    if (raf.current) cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(tick);
+  }
+
+  function stopLoop() {
+    running.current = false;
+    if (raf.current) cancelAnimationFrame(raf.current);
+    raf.current = null;
+  }
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+
     if (reduceMotion) {
-      // stato finale statico
+      stopLoop();
+      touching.current = false;
       pTargetX.current = 0;
       pTargetY.current = 0;
       pX.current = 0;
       pY.current = 0;
+      current.current = 1;
+      target.current = 1;
       apply(1, 0, 0);
       return;
     }
 
-    const onScroll = () => schedule();
-    const onResize = () => schedule();
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onResize);
-
-    // parallax listeners (solo se supportato)
+    const scroller = resolveScroller();
     const stage = stageRef.current;
 
-    const onMove = (e: PointerEvent) => {
-      if (!allowParallax) return;
+    // ✅ IntersectionObserver: accende il loop quando la sezione è a schermo
+    const io = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.some((e) => e.isIntersecting);
+        if (visible) startLoop();
+        else stopLoop();
+      },
+      { root: scroller === window ? null : (scroller as Element), threshold: 0 }
+    );
+    io.observe(section);
+
+    const onResize = () => {
+      // aggiorna subito senza aspettare scroll “pigri”
+      if (!running.current) startLoop();
+    };
+
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("scroll", onResize);
+
+    const setParallaxFromClient = (clientX: number, clientY: number) => {
       const el = stageRef.current;
       if (!el) return;
 
@@ -87,81 +172,128 @@ export default function SellersHomeTeaser(_props: Props) {
       const cx = r.left + r.width / 2;
       const cy = r.top + r.height / 2;
 
-      // normalized -1..1 con clamp morbido
-      const nx = clamp((e.clientX - cx) / (r.width / 2), -1, 1);
-      const ny = clamp((e.clientY - cy) / (r.height / 2), -1, 1);
+      const nx = clamp((clientX - cx) / (r.width / 2), -1, 1);
+      const ny = clamp((clientY - cy) / (r.height / 2), -1, 1);
 
       pTargetX.current = nx;
       pTargetY.current = ny;
-      schedule();
+      startLoop();
     };
 
-    const onLeave = () => {
+    const onPointerDown = (e: PointerEvent) => {
+      if (!allowTouchParallax) return;
+      if (e.pointerType !== "touch") return;
+      touching.current = true;
+      try {
+        stageRef.current?.setPointerCapture?.(e.pointerId);
+      } catch {}
+      setParallaxFromClient(e.clientX, e.clientY);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") {
+        if (!allowMouseParallax) return;
+        setParallaxFromClient(e.clientX, e.clientY);
+        return;
+      }
+
+      if (e.pointerType === "touch") {
+        if (!allowTouchParallax) return;
+        if (!touching.current) return;
+        setParallaxFromClient(e.clientX, e.clientY);
+      }
+    };
+
+    const onPointerUpOrCancel = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") return;
+      touching.current = false;
       pTargetX.current = 0;
       pTargetY.current = 0;
-      schedule();
+      startLoop();
     };
 
-    if (stage && allowParallax) {
-      stage.addEventListener("pointermove", onMove, { passive: true });
-      stage.addEventListener("pointerleave", onLeave, { passive: true });
+    const onPointerLeave = () => {
+      if (!allowMouseParallax) return;
+      pTargetX.current = 0;
+      pTargetY.current = 0;
+      startLoop();
+    };
+
+    if (stage) {
+      stage.addEventListener("pointerdown", onPointerDown, { passive: true });
+      stage.addEventListener("pointermove", onPointerMove, { passive: true });
+      stage.addEventListener("pointerup", onPointerUpOrCancel, { passive: true });
+      stage.addEventListener("pointercancel", onPointerUpOrCancel, { passive: true });
+      stage.addEventListener("pointerleave", onPointerLeave as any, { passive: true } as any);
     }
 
     // first paint
-    schedule();
+    startLoop();
 
     return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onResize);
+      io.disconnect();
 
-      if (stage && allowParallax) {
-        stage.removeEventListener("pointermove", onMove as any);
-        stage.removeEventListener("pointerleave", onLeave as any);
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("scroll", onResize);
+
+      if (stage) {
+        stage.removeEventListener("pointerdown", onPointerDown as any);
+        stage.removeEventListener("pointermove", onPointerMove as any);
+        stage.removeEventListener("pointerup", onPointerUpOrCancel as any);
+        stage.removeEventListener("pointercancel", onPointerUpOrCancel as any);
+        stage.removeEventListener("pointerleave", onPointerLeave as any);
       }
 
-      if (raf.current) cancelAnimationFrame(raf.current);
-      raf.current = null;
+      stopLoop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reduceMotion, allowParallax]);
-
-  function schedule() {
-    if (raf.current != null) return;
-    raf.current = requestAnimationFrame(tick);
-  }
+  }, [reduceMotion, allowMouseParallax, allowTouchParallax]);
 
   function tick() {
-    raf.current = null;
+    if (!running.current) return;
 
     const el = sectionRef.current;
     if (!el) return;
 
+    // aggiorna metriche stage senza “saltare” su 0
+    const stage = stageRef.current;
+    if (stage) {
+      const sr = stage.getBoundingClientRect();
+      if (sr.width > 30) stageW.current = sr.width;
+    }
+
     const rect = el.getBoundingClientRect();
-    const vh = window.innerHeight || 1;
 
-    // progress 0..1 mentre la sezione attraversa il viewport
-    const raw = clamp((vh - rect.top) / (rect.height + vh), 0, 1);
+    // ✅ IMPORTANTISSIMO su mobile: allinea rect.* con visualViewport
+    const vv = window.visualViewport;
+    const vh = Math.max(1, vv?.height ?? window.innerHeight ?? 1);
+    const vOff = vv?.offsetTop ?? 0;
+    const top = rect.top - vOff;
 
-    // loop triangolare: 0->1->0
+    // progress 0..1
+    const raw = clamp((vh - top) / (rect.height + vh), 0, 1);
+
+    // wave 0->1->0
     const wave = 1 - Math.abs(2 * raw - 1);
 
-    // easing apple-ish + smoothing
     const eased = easeInOutQuint(wave);
     target.current = eased;
     current.current = lerp(current.current, target.current, 0.14);
 
-    // parallax smoothing (micro)
+    // ✅ su phone: micro-parallax automatico durante lo scroll (se non stai toccando)
+    if (phoneRef.current && !touching.current) {
+      pTargetX.current = Math.sin(raw * Math.PI * 2) * 0.22;
+      pTargetY.current = Math.cos(raw * Math.PI * 2) * 0.14;
+    }
+
     pX.current = lerp(pX.current, pTargetX.current, 0.10);
     pY.current = lerp(pY.current, pTargetY.current, 0.10);
 
     apply(current.current, pX.current, pY.current);
 
-    const needsMore =
-      Math.abs(current.current - target.current) > 0.001 ||
-      Math.abs(pX.current - pTargetX.current) > 0.001 ||
-      Math.abs(pY.current - pTargetY.current) > 0.001;
-
-    if (needsMore) raf.current = requestAnimationFrame(tick);
+    // continua sempre finché la sezione è “in loop” (IO la spegne quando esce)
+    raf.current = requestAnimationFrame(tick);
   }
 
   function apply(t: number, nx: number, ny: number) {
@@ -170,20 +302,21 @@ export default function SellersHomeTeaser(_props: Props) {
     const r = rightRef.current;
     if (!c || !l || !r) return;
 
-    // ---- scroll-driven base
-    const cY = lerp(18, 0, t);
+    const w = stageW.current || 700;
+    const sideSize = phoneRef.current ? 118 : 148;
+    const sideHalf = sideSize / 2;
+    const safe = 12;
+    const maxX = clamp(w / 2 - sideHalf - safe, 0, 190);
+
+    const cY = lerp(phoneRef.current ? 12 : 18, 0, t);
     const cS = lerp(0.965, 1.0, t);
-    const cO = lerp(0.0, 1.0, t);
 
-    const x = lerp(0, 190, t);
-    const y = lerp(34, 14, t);
+    const x = lerp(0, maxX, t);
+    const y = lerp(phoneRef.current ? 28 : 34, phoneRef.current ? 12 : 14, t);
     const s = lerp(0.90, 0.96, t);
-    const o = lerp(0.0, 0.92, t);
 
-    // micro “breathing”
     const breathe = 1 + Math.sin(t * Math.PI) * 0.01;
 
-    // ---- parallax micro (in px / deg)
     const pxC = nx * 12;
     const pyC = ny * 8;
     const rotC = nx * -1.2;
@@ -191,6 +324,10 @@ export default function SellersHomeTeaser(_props: Props) {
     const pxS = nx * 9;
     const pyS = ny * 6;
     const rotS = nx * 1.0;
+
+    // ✅ niente “min opacity” su phone → non sporca le altre sezioni
+    const cO = lerp(0, 1.0, t);
+    const o = lerp(0, 0.92, t);
 
     c.style.opacity = String(cO);
     c.style.transform = `translate3d(${pxC}px, ${cY + pyC}px, 0) rotate(${rotC}deg) scale(${cS * breathe})`;
@@ -203,25 +340,19 @@ export default function SellersHomeTeaser(_props: Props) {
   }
 
   return (
-    <section
-      ref={sectionRef}
-      className="cc-section relative"
-      id="sellers"
-    >
+    // ✅ overflow-hidden QUI: impedisce alle sagome di finire nelle altre sezioni
+    <section ref={sectionRef} className="cc-section relative overflow-hidden" id="sellers">
       {/* glow leggero dietro */}
       <div aria-hidden className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(60%_50%_at_50%_35%,rgba(255,255,255,0.09),transparent_60%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(50%_40%_at_50%_75%,rgba(255,255,255,0.05),transparent_55%)]" />
       </div>
 
-      <div className="relative mx-auto w-full max-w-6xl px-4 md:px-8">
-        {/* header */}
+      <div className="relative z-[2] mx-auto w-full max-w-6xl px-4 md:px-8">
         <div className="text-center">
-          <div className="text-[11px] tracking-[0.35em] text-white/45">
-            BEST SELLERS
-          </div>
+          <div className="text-[11px] tracking-[0.35em] text-white/45">BEST SELLERS</div>
 
-          <h2 className="mt-2 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl md:text-5xl">
             Sellers
           </h2>
 
@@ -239,10 +370,12 @@ export default function SellersHomeTeaser(_props: Props) {
           </div>
         </div>
 
-        {/* stage libero (NO box) */}
-        <div className="relative mt-14 flex items-center justify-center">
-          <div ref={stageRef} className="relative h-[260px] w-full max-w-[700px]">
-            {/* spotlight */}
+        <div className="relative mt-10 flex items-center justify-center sm:mt-14">
+          <div
+            ref={stageRef}
+            className="relative h-[220px] w-full max-w-[620px] sm:h-[260px] sm:max-w-[700px]"
+            style={{ touchAction: "pan-y" }}
+          >
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0"
@@ -252,39 +385,29 @@ export default function SellersHomeTeaser(_props: Props) {
               }}
             />
 
-            {/* icons */}
             <div className="absolute inset-0 flex items-center justify-center">
               <div
                 ref={leftRef}
                 className="absolute will-change-transform"
-                style={{
-                  opacity: 0,
-                  transform: "translate3d(0,34px,0) scale(0.9)",
-                }}
+                style={{ opacity: 0, transform: "translate3d(0,34px,0) scale(0.9)" }}
               >
-                <SilhouetteApple size={148} variant="side" />
+                <SilhouetteApple size={isPhone ? 118 : 148} variant="side" />
               </div>
 
               <div
                 ref={centerRef}
                 className="absolute z-10 will-change-transform"
-                style={{
-                  opacity: 0,
-                  transform: "translate3d(0,18px,0) scale(0.965)",
-                }}
+                style={{ opacity: 0, transform: "translate3d(0,18px,0) scale(0.965)" }}
               >
-                <SilhouetteApple size={182} variant="main" />
+                <SilhouetteApple size={isPhone ? 156 : 182} variant="main" />
               </div>
 
               <div
                 ref={rightRef}
                 className="absolute will-change-transform"
-                style={{
-                  opacity: 0,
-                  transform: "translate3d(0,34px,0) scale(0.9)",
-                }}
+                style={{ opacity: 0, transform: "translate3d(0,34px,0) scale(0.9)" }}
               >
-                <SilhouetteApple size={148} variant="side" />
+                <SilhouetteApple size={isPhone ? 118 : 148} variant="side" />
               </div>
             </div>
           </div>
@@ -296,13 +419,7 @@ export default function SellersHomeTeaser(_props: Props) {
 
 /* ---------- premium “apple-ish” silhouette ---------- */
 
-function SilhouetteApple({
-  size,
-  variant,
-}: {
-  size: number;
-  variant: "main" | "side";
-}) {
+function SilhouetteApple({ size, variant }: { size: number; variant: "main" | "side" }) {
   const uid = useId();
   const g1 = `${uid}-g1-${variant}`;
   const g2 = `${uid}-g2-${variant}`;
@@ -314,10 +431,7 @@ function SilhouetteApple({
       : "drop-shadow-[0_14px_30px_rgba(0,0,0,0.52)]";
 
   return (
-    <div
-      className={["relative grid place-items-center", shadow].join(" ")}
-      style={{ width: size, height: size }}
-    >
+    <div className={["relative grid place-items-center", shadow].join(" ")} style={{ width: size, height: size }}>
       <div
         aria-hidden
         className="absolute inset-0 rounded-full"
@@ -372,18 +486,4 @@ function SilhouetteApple({
       </svg>
     </div>
   );
-}
-
-/* ---------- utils ---------- */
-
-function clamp(n: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, n));
-}
-
-function lerp(a: number, b: number, t: number) {
-  return a + (b - a) * t;
-}
-
-function easeInOutQuint(t: number) {
-  return t < 0.5 ? 16 * t ** 5 : 1 - Math.pow(-2 * t + 2, 5) / 2;
 }

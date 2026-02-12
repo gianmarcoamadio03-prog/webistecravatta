@@ -17,10 +17,10 @@ type SellerLike = {
 
 export default function SellersSectionClient({ sellers }: { sellers: SellerLike[] }) {
   return (
-    <section className="cc-section">
+    <div className="mt-10">
       <div className="mx-auto w-full max-w-5xl px-4">
         <SellersBlock sellers={(Array.isArray(sellers) ? sellers : []).slice(0, 3)} />
       </div>
-    </section>
+    </div>
   );
 }

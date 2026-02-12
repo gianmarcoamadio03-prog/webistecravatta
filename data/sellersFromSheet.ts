@@ -16,13 +16,6 @@ function normalizePrivateKey(key: string) {
   return key.replace(/\\n/g, "\n");
 }
 
-/**
- * Prova a leggere il JSON del service account da:
- * - GOOGLE_SERVICE_ACCOUNT_JSON (path o JSON string)
- * - GOOGLE_APPLICATION_CREDENTIALS (path al JSON)
- * - scraper/service-account.json
- * - service-account.json
- */
 function tryReadServiceAccountJson(): { email: string; key: string } | null {
   const candidates = [
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
@@ -33,7 +26,6 @@ function tryReadServiceAccountJson(): { email: string; key: string } | null {
 
   for (const p of candidates) {
     try {
-      // ✅ se è già JSON (inizia con "{"), parsalo direttamente
       if (p.trim().startsWith("{")) {
         const j = JSON.parse(p);
         const email = String(j.client_email || "").trim();
@@ -42,7 +34,6 @@ function tryReadServiceAccountJson(): { email: string; key: string } | null {
         continue;
       }
 
-      // altrimenti trattalo come path
       const abs = path.isAbsolute(p) ? p : path.join(process.cwd(), p);
       if (!fs.existsSync(abs)) continue;
 
@@ -52,11 +43,9 @@ function tryReadServiceAccountJson(): { email: string; key: string } | null {
       const email = String(j.client_email || "").trim();
       const key = String(j.private_key || "").trim();
 
-      if (email && key) {
-        return { email, key: normalizePrivateKey(key) };
-      }
+      if (email && key) return { email, key: normalizePrivateKey(key) };
     } catch {
-      // ignore e prova il prossimo
+      // ignore
     }
   }
   return null;
@@ -133,8 +122,7 @@ function pickSheetOrThrow(
 }
 
 function v(row: any, key: string) {
-  const raw =
-    (typeof row.get === "function" ? row.get(key) : row?.[key]) ?? "";
+  const raw = (typeof row.get === "function" ? row.get(key) : row?.[key]) ?? "";
   const s = String(raw).trim();
   return s.length ? s : "";
 }
@@ -157,6 +145,50 @@ function splitTags(raw: string): string[] {
   return out;
 }
 
+/* ---------------- retry + cache (anti 503) ---------------- */
+
+function isRetryable(err: any) {
+  const msg = String(err?.message || err || "");
+  return (
+    msg.includes("[503]") ||
+    msg.includes(" 503") ||
+    msg.includes("503") ||
+    msg.includes("[429]") ||
+    msg.includes(" 429") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("EAI_AGAIN") ||
+    msg.includes("ENOTFOUND")
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function withRetry<T>(fn: () => Promise<T>, tries = 3) {
+  let lastErr: any = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (!isRetryable(e) || i === tries - 1) break;
+      await sleep(250 * Math.pow(2, i)); // 250ms, 500ms, 1s
+    }
+  }
+  throw lastErr;
+}
+
+type CacheKey = string;
+type CacheVal = { at: number; data: { sellers: Seller[]; cards: SellerCard[] } };
+
+function cacheStore(): Map<CacheKey, CacheVal> {
+  const g = globalThis as any;
+  if (!g.__CRAVATTA_SELLERS_CACHE) g.__CRAVATTA_SELLERS_CACHE = new Map();
+  return g.__CRAVATTA_SELLERS_CACHE as Map<CacheKey, CacheVal>;
+}
+
 export async function getSellersAndCards(): Promise<{
   sellers: Seller[];
   cards: SellerCard[];
@@ -167,95 +199,116 @@ export async function getSellersAndCards(): Promise<{
   const TAB_SELLERS = process.env.SELLERS_TAB || "sellers";
   const TAB_CARDS = process.env.SELLER_CARDS_TAB || "seller_cards";
 
-  const doc = new GoogleSpreadsheet(SHEET_ID, auth());
-  await doc.loadInfo();
+  const key = `${SHEET_ID}::${TAB_SELLERS}::${TAB_CARDS}`;
+  const store = cacheStore();
+  const cached = store.get(key);
 
-  const sellersSheet = pickSheetOrThrow(doc, TAB_SELLERS, 0);
-  const cardsSheet = pickSheetOrThrow(doc, TAB_CARDS, 1);
+  // cache breve (dev friendly)
+  const TTL = 60_000; // 60s
+  if (cached && Date.now() - cached.at < TTL) return cached.data;
 
-  const sellerRows = await sellersSheet.getRows();
-  const cardRows = await cardsSheet.getRows();
+  try {
+    const doc = new GoogleSpreadsheet(SHEET_ID, auth());
 
-  const sellers: Seller[] = sellerRows
-    .map((r: any) => {
-      const id = v(r, "id");
-      const name = v(r, "name");
-      const tagsRaw = v(r, "tags") || v(r, "specialities") || v(r, "brands");
-      if (!id || !name) return null;
+    await withRetry(() => doc.loadInfo(), 3);
 
-      return {
-        id,
-        name,
-        tags: splitTags(tagsRaw),
-        yupoo_url: v(r, "yupoo_url") || null,
-        whatsapp: v(r, "whatsapp") || null,
-        store_url: v(r, "store_url") || null,
-      } satisfies Seller;
-    })
-    .filter(Boolean) as Seller[];
+    const sellersSheet = pickSheetOrThrow(doc, TAB_SELLERS, 0);
+    const cardsSheet = pickSheetOrThrow(doc, TAB_CARDS, 1);
 
-  const cards: SellerCard[] = cardRows
-    .map((r: any) => {
-      const id = v(r, "id");
-      const seller_id = v(r, "seller_id");
-      const title = v(r, "title");
-      const description = v(r, "description") || v(r, "subtitle");
-      const image = v(r, "image");
-      if (!id || !seller_id || !title) return null;
+    const sellerRows = await withRetry(() => sellersSheet.getRows(), 3);
+    const cardRows = await withRetry(() => cardsSheet.getRows(), 3);
 
-      return {
-        id,
-        seller_id,
-        title,
-        description: description || null,
-        image: image || null,
-      } satisfies SellerCard;
-    })
-    .filter(Boolean) as SellerCard[];
+    const sellers: Seller[] = sellerRows
+      .map((r: any) => {
+        const id = v(r, "id");
+        const name = v(r, "name");
+        const tagsRaw = v(r, "tags") || v(r, "specialities") || v(r, "brands");
+        if (!id || !name) return null;
 
-  return { sellers, cards };
+        return {
+          id,
+          name,
+          tags: splitTags(tagsRaw),
+          yupoo_url: v(r, "yupoo_url") || null,
+          whatsapp: v(r, "whatsapp") || null,
+          store_url: v(r, "store_url") || null,
+        } satisfies Seller;
+      })
+      .filter(Boolean) as Seller[];
+
+    const cards: SellerCard[] = cardRows
+      .map((r: any) => {
+        const id = v(r, "id");
+        const seller_id = v(r, "seller_id");
+        const title = v(r, "title");
+        const description = v(r, "description") || v(r, "subtitle");
+        const image = v(r, "image");
+        if (!id || !seller_id || !title) return null;
+
+        return {
+          id,
+          seller_id,
+          title,
+          description: description || null,
+          image: image || null,
+        } satisfies SellerCard;
+      })
+      .filter(Boolean) as SellerCard[];
+
+    const data = { sellers, cards };
+    store.set(key, { at: Date.now(), data });
+    return data;
+  } catch (e) {
+    // se ho cache vecchia, uso quella invece di “rompere” la home
+    if (cached?.data) return cached.data;
+    throw e;
+  }
 }
 
 /**
- * ✅ Adapter per la Home (quello che importi in app/page.tsx)
- * Formato compatibile con components/SellersSection.tsx
+ * ✅ Adapter per la Home
  */
 export async function getSellersFromSheet(): Promise<
   { name: string; description?: string; tags?: string[]; verified?: boolean; href?: string }[]
 > {
-  const { sellers } = await getSellersAndCards();
+  try {
+    const { sellers } = await getSellersAndCards();
 
-  const seen = new Set<string>();
-  const out: {
-    name: string;
-    description?: string;
-    tags?: string[];
-    verified?: boolean;
-    href?: string;
-  }[] = [];
+    const seen = new Set<string>();
+    const out: {
+      name: string;
+      description?: string;
+      tags?: string[];
+      verified?: boolean;
+      href?: string;
+    }[] = [];
 
-  for (const s of sellers) {
-    const name = (s?.name ?? "").trim();
-    if (!name) continue;
+    for (const s of sellers) {
+      const name = (s?.name ?? "").trim();
+      if (!name) continue;
 
-    const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
+      const k = name.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
 
-    const tags = Array.isArray(s.tags) ? s.tags : [];
-    const href = (s.store_url || s.yupoo_url || "/sellers") ?? "/sellers";
+      const tags = Array.isArray((s as any).tags) ? (s as any).tags : [];
+      const href = (s as any).store_url || (s as any).yupoo_url || "/sellers";
 
-    out.push({
-      name,
-      tags,
-      verified: true,
-      href,
-      description:
-        tags.length > 0
-          ? `Specialità: ${tags.slice(0, 3).join(" · ")}`
-          : "Seller selezionato per consistenza e affidabilità.",
-    });
+      out.push({
+        name,
+        tags,
+        verified: true,
+        href,
+        description:
+          tags.length > 0
+            ? `Specialità: ${tags.slice(0, 3).join(" · ")}`
+            : "Seller selezionato per consistenza e affidabilità.",
+      });
+    }
+
+    return out;
+  } catch (e) {
+    console.error("getSellersFromSheet failed (fallback to []):", e);
+    return [];
   }
-
-  return out;
 }

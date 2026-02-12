@@ -3,8 +3,6 @@ import SpreadsheetClient from "./SpreadsheetClient";
 import { getSpreadsheetPage } from "@/data/itemsFromSheet";
 import { redirect } from "next/navigation";
 
-// ✅ Cache server-side: migliora tantissimo velocità e riduce chiamate a Google Sheets.
-// Ogni combinazione di querystring viene cachata per il tempo sotto.
 export const revalidate = 60;
 export const runtime = "nodejs";
 
@@ -42,7 +40,6 @@ function clamp(n: number, a: number, b: number) {
 }
 
 function cleanSeed(v: string) {
-  // evita seed enormi in URL (e mantiene cacheKey “sano”)
   return (v || "").trim().slice(0, 64);
 }
 
@@ -70,10 +67,9 @@ export default async function Page({
   const pageRaw = parseInt(cleanStr(sp.page) || "1", 10);
   const requestedPage = Number.isFinite(pageRaw) ? pageRaw : 1;
 
-  // ✅ seed SOLO se order=random
   let shuffle = cleanSeed(cleanStr(sp.shuffle));
 
-  // ✅ Miglioria: se sei in random ma manca shuffle, generiamo seed server-side e redirectiamo
+  // se sei in random ma manca shuffle, generiamo seed server-side e redirectiamo
   if (order === "random" && !shuffle) {
     shuffle = Date.now().toString(36);
 
@@ -96,17 +92,13 @@ export default async function Page({
     brand,
     category,
     order,
-    // ⚠️ IMPORTANTISSIMO: getSpreadsheetPage usa "seed"
     seed: order === "random" ? shuffle : undefined,
   });
 
   const page = clamp(res.page, 1, res.totalPages);
 
-  if (process.env.NODE_ENV !== "production") {
-    console.log("[spreadsheet] order=", order, "seed=", shuffle || "-", "page=", page);
-  }
-
   return (
+  <main className="ss-page">
     <SpreadsheetClient
       items={res.items as SheetItem[]}
       page={page}
@@ -116,5 +108,7 @@ export default async function Page({
       facets={res.facets}
       initialFilters={{ q, seller, brand, category, order }}
     />
-  );
+  </main>
+);
+
 }

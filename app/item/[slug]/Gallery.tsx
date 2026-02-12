@@ -44,19 +44,18 @@ export default function Gallery({
       .filter((u) => isValidUrl(u))
       .map((u) => u.trim());
 
-    // ✅ key: per Yupoo dedup ignorando la query (spesso cambia)
     const keyOf = (u: string) => {
       try {
         const url = new URL(u);
         const host = url.hostname.toLowerCase();
-        if (host.includes("photo.yupoo.com")) return `${host}${url.pathname}`.toLowerCase();
+        if (host.includes("photo.yupoo.com"))
+          return `${host}${url.pathname}`.toLowerCase();
         return url.toString().toLowerCase();
       } catch {
         return u.toLowerCase();
       }
     };
 
-    // ✅ se c'è doppione, preferisci la variante con query (spesso ha auth_key)
     const better = (a: string, b: string) => {
       try {
         const qa = new URL(a).search.length;
@@ -105,7 +104,6 @@ export default function Gallery({
     setIdx((i) => (i + 1) % max);
   }
 
-  // ESC + frecce SOLO quando lightbox è aperto
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!open) return;
@@ -120,15 +118,19 @@ export default function Gallery({
 
   const thumbsRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ quando cambia idx (frecce), porta in vista la thumb attiva
   useEffect(() => {
     const el = thumbsRef.current;
     if (!el) return;
-    const active = el.querySelector<HTMLButtonElement>(`button[data-idx="${idx}"]`);
-    active?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    const active = el.querySelector<HTMLButtonElement>(
+      `button[data-idx="${idx}"]`
+    );
+    active?.scrollIntoView({
+      behavior: "smooth",
+      inline: "center",
+      block: "nearest",
+    });
   }, [idx]);
 
-  // ✅ drag thumbs con soglia + click OK
   const drag = useRef({
     active: false,
     startX: 0,
@@ -143,20 +145,16 @@ export default function Gallery({
     const el = thumbsRef.current;
     if (!el) return;
 
-    const THRESH = 6; // px
+    const THRESH = 6;
 
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
-
       drag.current.active = true;
       drag.current.moved = false;
       drag.current.captured = false;
       drag.current.startX = e.clientX;
       drag.current.startScroll = el.scrollLeft;
       drag.current.pointerId = e.pointerId;
-
-      // ❌ NON mettere is-dragging qui
-      // ❌ NON fare setPointerCapture qui
     };
 
     const onMove = (e: PointerEvent) => {
@@ -164,31 +162,23 @@ export default function Gallery({
 
       const dx = e.clientX - drag.current.startX;
 
-      // aspetta la soglia prima di considerarlo un drag vero
       if (!drag.current.moved) {
         if (Math.abs(dx) < THRESH) return;
 
         drag.current.moved = true;
-        el.classList.add("is-dragging");
-
-        // ✅ cattura SOLO quando parte davvero il drag
         try {
           el.setPointerCapture(e.pointerId);
           drag.current.captured = true;
         } catch {}
       }
 
-      // drag vero → scorri
       el.scrollLeft = drag.current.startScroll - dx;
     };
 
     const onUp = () => {
-      if (drag.current.moved) {
-        drag.current.lastDragAt = Date.now();
-      }
+      if (drag.current.moved) drag.current.lastDragAt = Date.now();
 
       drag.current.active = false;
-      el.classList.remove("is-dragging");
 
       try {
         if (drag.current.captured && drag.current.pointerId !== -1) {
@@ -199,7 +189,6 @@ export default function Gallery({
       drag.current.pointerId = -1;
       drag.current.captured = false;
 
-      // reset moved al tick dopo
       window.setTimeout(() => {
         drag.current.moved = false;
       }, 0);
@@ -220,38 +209,88 @@ export default function Gallery({
     };
   }, []);
 
+  // swipe su hero (mobile)
+  const swipe = useRef({
+    active: false,
+    x: 0,
+    y: 0,
+    id: -1,
+  });
+
+  const onHeroDown = (e: React.PointerEvent) => {
+    swipe.current.active = true;
+    swipe.current.x = e.clientX;
+    swipe.current.y = e.clientY;
+    swipe.current.id = e.pointerId;
+  };
+
+  const onHeroUp = (e: React.PointerEvent) => {
+    if (!swipe.current.active) return;
+    swipe.current.active = false;
+
+    const dx = e.clientX - swipe.current.x;
+    const dy = e.clientY - swipe.current.y;
+
+    // evita swipe se è uno scroll verticale
+    if (Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx)) return;
+
+    if (dx > 60) prev();
+    if (dx < -60) next();
+  };
+
   if (!max) {
     return (
-      <div className="it-galleryEmpty">
-        <div className="it-galleryEmptyTitle">Nessuna foto disponibile</div>
-        <div className="it-galleryEmptySub">Aggiungi immagini nel foglio (images / pics).</div>
+      <div className="p-8 text-center">
+        <div className="text-white/90 font-semibold">Nessuna foto disponibile</div>
+        <div className="mt-2 text-sm text-white/55">
+          Aggiungi immagini nel foglio (images / pics).
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="it-gallery">
-      <div className="it-galleryHeroWrap">
+    <div className="p-3 sm:p-4">
+      {/* HERO (fisso: 4:3 + clamp altezza su mobile + img che riempie il box) */}
+      <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/55">
         <button
           type="button"
-          className="it-galleryHero"
+          className="relative block w-full focus:outline-none"
+          style={{
+            aspectRatio: "4 / 3",
+            maxHeight: "60vh", // ✅ evita “hero gigante” su mobile
+          }}
+          onPointerDown={onHeroDown}
+          onPointerUp={onHeroUp}
+          onPointerCancel={() => (swipe.current.active = false)}
           onClick={() => {
             if (galleryBlocked()) return;
             setOpen(true);
           }}
           aria-label="Apri gallery"
         >
-          <img src={pics[idx]} alt={title} className="it-galleryHeroImg" draggable={false} />
-          <div className="it-galleryHeroSheen" />
+          {/* ✅ img deve essere w/h FULL altrimenti su mobile “scappa” */}
+          <img
+            src={pics[idx]}
+            alt={title}
+            draggable={false}
+            loading="eager"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-contain select-none bg-black/20"
+          />
+
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(700px_280px_at_50%_0%,rgba(255,255,255,0.10),transparent_60%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
         </button>
 
+        {/* arrows */}
         <button
           type="button"
-          className="it-galleryArrow it-galleryArrow--left"
           onClick={(e) => {
             e.stopPropagation();
             prev();
           }}
+          className="absolute left-3 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-white/10 bg-black/45 backdrop-blur-md text-white/90 hover:bg-black/60 transition"
           aria-label="Previous"
         >
           ‹
@@ -259,39 +298,60 @@ export default function Gallery({
 
         <button
           type="button"
-          className="it-galleryArrow it-galleryArrow--right"
           onClick={(e) => {
             e.stopPropagation();
             next();
           }}
+          className="absolute right-3 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full border border-white/10 bg-black/45 backdrop-blur-md text-white/90 hover:bg-black/60 transition"
           aria-label="Next"
         >
           ›
         </button>
 
-        <div className="it-galleryCounter">
+        {/* counter */}
+        <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full text-[12px] font-semibold border border-white/10 bg-black/55 backdrop-blur-md text-white/90">
           {idx + 1}/{max}
         </div>
       </div>
 
-      <div ref={thumbsRef} className="it-galleryThumbs">
-        {pics.map((u, i) => (
-          <button
-            key={`${u}-${i}`}
-            type="button"
-            className="it-galleryThumb"
-            data-idx={i}
-            data-active={i === idx ? "1" : "0"}
-            onClick={() => {
-              // ✅ se hai appena trascinato, ignora il click "di rilascio"
-              if (Date.now() - drag.current.lastDragAt < 220) return;
-              setIdx(i);
-            }}
-            aria-label={`Foto ${i + 1}`}
-          >
-            <img src={u} alt="" className="it-galleryThumbImg" draggable={false} />
-          </button>
-        ))}
+      {/* THUMBS (più piccole su mobile, meno “casino”) */}
+      <div
+        ref={thumbsRef}
+        className="mt-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-grab select-none"
+      >
+        {pics.map((u, i) => {
+          const active = i === idx;
+          return (
+            <button
+              key={`${u}-${i}`}
+              type="button"
+              data-idx={i}
+              onClick={() => {
+                if (Date.now() - drag.current.lastDragAt < 220) return;
+                setIdx(i);
+              }}
+              className={[
+                "relative h-14 w-14 sm:h-16 sm:w-16 rounded-2xl overflow-hidden border transition shrink-0",
+                active
+                  ? "border-white/30 bg-white/10"
+                  : "border-white/10 bg-white/5 hover:border-white/20",
+              ].join(" ")}
+              aria-label={`Foto ${i + 1}`}
+            >
+              <img
+                src={u}
+                alt=""
+                draggable={false}
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover"
+              />
+              {active ? (
+                <div className="absolute inset-0 ring-2 ring-white/15 pointer-events-none" />
+              ) : null}
+            </button>
+          );
+        })}
       </div>
 
       <Lightbox

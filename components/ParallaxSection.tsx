@@ -1,6 +1,5 @@
-// components/ParallaxSection.tsx
-import "server-only";
 import type { ReactNode } from "react";
+import ParallaxDecor from "@/components/ParallaxDecor";
 
 type Props = {
   id?: string;
@@ -9,6 +8,8 @@ type Props = {
   description?: string;
   children?: ReactNode;
   childrenWidth?: "normal" | "wide";
+  decor?: "none" | "orbs" | "shapes";
+  decorIntensity?: number;
 };
 
 export default function ParallaxSection({
@@ -18,22 +19,27 @@ export default function ParallaxSection({
   description,
   children,
   childrenWidth = "normal",
+  decor = "orbs",          // ✅ default sicuro
+  decorIntensity = 18,
 }: Props) {
-  const hasEyebrow = !!eyebrow?.trim();
-  const containerClass =
-    childrenWidth === "wide" ? "cc-container cc-container--wide" : "cc-container";
-
   return (
-    <section id={id} className="cc-section">
+    <section id={id} className="cc-section ps-section">
+      {decor !== "none" && (
+        <ParallaxDecor
+          intensity={decorIntensity}
+          variant={decor === "shapes" ? "shapes" : "orbs"}
+        />
+      )}
+
       <div className="cc-section-wrap">
-        <div className={containerClass}>
-          <header className={`ps-header ${hasEyebrow ? "" : "ps-header--noEyebrow"}`}>
-            {hasEyebrow && <div className="ps-eyebrow">{eyebrow}</div>}
+        <div className={`cc-container ${childrenWidth === "wide" ? "cc-container--wide" : ""}`}>
+          <div className={`ps-header ${!eyebrow ? "ps-header--noEyebrow" : ""}`}>
+            {eyebrow ? <div className="ps-eyebrow">{eyebrow}</div> : null}
             <h2 className="ps-title">{title}</h2>
             {description ? <p className="ps-desc">{description}</p> : null}
-          </header>
+          </div>
 
-          {children}
+          <div className="ps-body">{children}</div>
         </div>
       </div>
     </section>

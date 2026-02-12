@@ -1,4 +1,3 @@
-// app/item/[slug]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -71,8 +70,8 @@ function parsePics(input: any): string[] {
   const raw: string[] = Array.isArray(input)
     ? input
     : typeof input === "string"
-    ? input.split(/\n|,|\s+/g)
-    : [];
+      ? input.split(/\n|,|\s+/g)
+      : [];
 
   return raw.map((x) => safeStr(x)).filter((x) => x.length > 0 && isValidUrl(x));
 }
@@ -129,13 +128,78 @@ function cleanBackQuery(raw: string) {
   try {
     q = decodeURIComponent(q);
   } catch {}
-
   q = q.replace(/^\?/, "");
 
   if (!q) return "";
   if (q.includes("http://") || q.includes("https://")) return "";
   if (q.includes("/")) return "";
   return q;
+}
+
+/** ✅ pill compatte, wrap pulito (anti clipping) */
+function MetaPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      className={[
+        "inline-flex items-center",
+        "h-7 px-3 rounded-full",
+        "border border-white/10 bg-white/5",
+        "text-[11px] text-white/80",
+        "tracking-[0.18em] uppercase leading-none",
+        "max-w-full overflow-hidden text-ellipsis whitespace-nowrap",
+      ].join(" ")}
+    >
+      {children}
+    </span>
+  );
+}
+
+function AgentBtn({
+  href,
+  label,
+  iconSrc,
+  variant = "secondary",
+  size = "md",
+}: {
+  href?: string;
+  label: string;
+  iconSrc: string;
+  variant?: "primary" | "secondary";
+  size?: "md" | "sm";
+}) {
+  const disabled = !href;
+
+  const h = size === "sm" ? "h-10" : "h-11";
+  const px = size === "sm" ? "px-3.5" : "px-4";
+  const text = size === "sm" ? "text-[13px]" : "text-sm";
+
+  // ✅ icone scalate: su sm più piccole (così non “esplodono” su mobile)
+  const icoBox = size === "sm" ? "h-5 w-5 rounded-lg" : "h-6 w-6 rounded-xl";
+  const icoImg = size === "sm" ? "h-4 w-4" : "h-5 w-5";
+
+  const base = `inline-flex items-center justify-center gap-2 ${h} ${px} rounded-full border transition ${text} font-semibold whitespace-nowrap`;
+  const enabled =
+    variant === "primary"
+      ? "border-white/15 bg-gradient-to-r from-violet-300/90 to-emerald-200/90 text-black hover:brightness-105 active:brightness-95"
+      : "border-white/12 bg-white/7 text-white/90 hover:bg-white/10 hover:border-white/20 active:bg-white/12";
+  const disabledCls = "opacity-40 cursor-not-allowed border-white/10 bg-white/5 text-white/60";
+
+  return (
+    <a
+      href={disabled ? undefined : href}
+      target={disabled ? undefined : "_blank"}
+      rel={disabled ? undefined : "nofollow noreferrer"}
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      className={[base, disabled ? disabledCls : enabled].join(" ")}
+      title={disabled ? "Link non disponibile" : label}
+    >
+      <span className={`${icoBox} bg-white/90 grid place-items-center overflow-hidden shrink-0`}>
+        <img src={iconSrc} alt="" className={`${icoImg} object-contain block`} />
+      </span>
+      <span className="leading-none">{label}</span>
+    </a>
+  );
 }
 
 export default async function ItemPage({
@@ -188,103 +252,74 @@ export default async function ItemPage({
       ? found.rowNumber
       : null;
 
-  return (
-    <main className="it-page">
-      <div className="it-backdrop" />
+  // ✅ padding sotto: sufficiente per dock, ma NON esagerato
+  const bottomPad = "pb-[calc(130px+env(safe-area-inset-bottom))] lg:pb-10";
 
-      <div className="it-container">
-        {/* TOPBAR */}
-        <div className="it-topbar">
-          <Link href={backHref} className="it-btn">
+  return (
+    <main className={`min-h-screen w-full bg-black text-white ${bottomPad}`}>
+      {/* backdrop */}
+      <div className="pointer-events-none fixed inset-0 -z-10">
+        <div className="absolute inset-0 bg-[radial-gradient(900px_420px_at_50%_0%,rgba(255,255,255,0.08),transparent_60%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(700px_420px_at_15%_80%,rgba(160,255,220,0.06),transparent_65%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(700px_420px_at_85%_70%,rgba(185,130,255,0.06),transparent_65%)]" />
+      </div>
+
+      {/* Topbar */}
+      <div className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur-xl">
+        <div
+          className={[
+            "mx-auto w-full max-w-5xl",
+            "pl-[calc(16px+env(safe-area-inset-left))] pr-[calc(16px+env(safe-area-inset-right))]",
+            "sm:px-6 py-3 flex items-center gap-3",
+          ].join(" ")}
+        >
+          <Link
+            href={backHref}
+            className="inline-flex items-center justify-center h-10 px-4 rounded-full border border-white/12 bg-white/6 hover:bg-white/10 transition text-sm font-semibold"
+            title="Torna al catalogo"
+          >
             ← Catalogo
           </Link>
-          <div className="it-topbarSpacer" />
+
+          <div className="ml-auto text-[11px] text-white/45 hidden sm:block">
+            {seller ? `Seller: ${seller}` : ""}
+          </div>
         </div>
+      </div>
 
-        {/* HERO */}
-        <header className="it-hero">
-          <h1 className="it-title">{title}</h1>
+      {/* Content */}
+      <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 pt-4">
+        <header className="mb-4">
+          <h1 className="text-[26px] leading-[1.08] sm:text-4xl font-extrabold tracking-tight text-white/95">
+            {title}
+          </h1>
 
-          <div className="it-metaRow">
-            {seller ? <span className="it-pill">SELLER: {seller}</span> : null}
-            {category ? <span className="it-pill">CATEGORIA: {category}</span> : null}
-            <span className="it-pill">FOTO: {pics.length || 0}</span>
+          {/* ✅ TAG: wrap pulito + anti clipping */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {brand ? <MetaPill>Brand: {brand}</MetaPill> : null}
+            {seller ? <MetaPill>Seller: {seller}</MetaPill> : null}
+            {category ? <MetaPill>Categoria: {category}</MetaPill> : null}
+            <MetaPill>Foto: {pics.length || 0}</MetaPill>
           </div>
         </header>
 
-        {/* MAIN */}
-        <div className="it-main">
-          {/* LEFT */}
-          <section className="it-left">
-            <div className="it-card it-card--gallery">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr),360px] items-start">
+          {/* Left */}
+          <section className="min-w-0 space-y-5">
+            <div className="rounded-3xl border border-white/10 bg-white/5 shadow-[0_30px_120px_rgba(0,0,0,0.55)] overflow-hidden">
               <Gallery images={pics} title={title} />
             </div>
-          </section>
 
-          {/* RIGHT */}
-          <aside className="it-right">
-            <div className="it-card it-card--side">
-              <div className="it-sideTop">
-                <div className="it-sideLabel">ACQUISTO TRAMITE AGENT</div>
-              </div>
-
-              <div className="it-priceBox">
-                <div className="it-priceLabel">PREZZO STIMATO</div>
-                <div className="it-priceValue">{eurLabel}</div>
-              </div>
-
-              {/* ✅ SOLO pulsanti agent qui dentro */}
-              <div className="it-actions">
-                {/* USFANS */}
-                <a
-                  className={["it-agentbtn it-agentbtn--usfans", usfansUrl ? "" : "is-disabled"].join(" ")}
-                  href={usfansUrl || undefined}
-                  target={usfansUrl ? "_blank" : undefined}
-                  rel={usfansUrl ? "nofollow noreferrer" : undefined}
-                >
-                  <span className="it-agentbtn-logo">
-                    <img src="/agents/usfans.png" alt="USFans" />
-                  </span>
-                  <span className="it-agentbtn-text">
-                    {usfansUrl ? "USFans Link" : "Coming soon"}
-                  </span>
-                </a>
-
-                {/* MULEBUY */}
-                <a
-                  className={["it-agentbtn it-agentbtn--mulebuy", mulebuyUrl ? "" : "is-disabled"].join(" ")}
-                  href={mulebuyUrl || undefined}
-                  target={mulebuyUrl ? "_blank" : undefined}
-                  rel={mulebuyUrl ? "nofollow noreferrer" : undefined}
-                >
-                  <span className="it-agentbtn-logo">
-                    <img src="/agents/mulebuy.png" alt="MuleBuy" />
-                  </span>
-                  <span className="it-agentbtn-text">
-                    {mulebuyUrl ? "MuleBuy Link" : "Coming soon"}
-                  </span>
-                </a>
-
-                <div className="it-agentbtn it-agentbtn--soon is-disabled">
-                  <span className="it-agentbtn-logo" />
-                  <span className="it-agentbtn-text">Coming soon</span>
+            {/* ✅ Mobile-only support (ripulito, NO testo sotto) */}
+            <div className="lg:hidden rounded-3xl border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] tracking-[0.32em] uppercase text-white/45">
+                  Assistenza
                 </div>
-
-                <div className="it-agentbtn it-agentbtn--soon is-disabled">
-                  <span className="it-agentbtn-logo" />
-                  <span className="it-agentbtn-text">Coming soon</span>
-                </div>
+                <div className="text-[11px] text-white/35">Help</div>
               </div>
 
-              {/* ✅ SOS FUORI dalla sezione agent (con separatore FORZATO) */}
-              <div
-                className="it-supportRow"
-                style={{
-                  marginTop: 12,
-                  paddingTop: 12,
-                  borderTop: "1px solid rgba(255,255,255,0.08)",
-                }}
-              >
+              <div className="mt-3">
                 <SupportButton
                   title={title}
                   id={safeStr(found.id) || wanted}
@@ -296,13 +331,94 @@ export default async function ItemPage({
                   sourceUrl={sourceUrl || undefined}
                 />
               </div>
+            </div>
+          </section>
 
-              <p className="it-sideNote">
-                Se il prezzo non compare è perché in sheet <code>price_eur</code> e{" "}
-                <code>source_price_cny</code> sono vuoti / non validi.
-              </p>
+          {/* Right (desktop only) */}
+          <aside className="hidden lg:block">
+            <div className="sticky top-24 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
+              <div className="text-[11px] tracking-[0.32em] uppercase text-white/45">
+                Acquisto tramite agent
+              </div>
+
+              <div className="mt-4 rounded-3xl border border-white/10 bg-gradient-to-br from-violet-400/20 to-emerald-200/10 p-4">
+                <div className="text-[11px] tracking-[0.28em] uppercase text-white/55">
+                  Prezzo stimato
+                </div>
+                <div className="mt-1 text-3xl font-extrabold text-white/95">{eurLabel}</div>
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                <AgentBtn
+                  href={usfansUrl || undefined}
+                  label="USFans"
+                  iconSrc="/agents/usfans.png"
+                  variant="primary"
+                />
+                <AgentBtn
+                  href={mulebuyUrl || undefined}
+                  label="MuleBuy"
+                  iconSrc="/agents/mulebuy.png"
+                  variant="secondary"
+                />
+              </div>
+
+              {/* ✅ Assistenza desktop ripulita (NO testo sotto) */}
+              <div className="mt-5 pt-5 border-t border-white/10">
+                <div className="text-[11px] tracking-[0.32em] uppercase text-white/45 mb-3">
+                  Assistenza
+                </div>
+
+                <SupportButton
+                  title={title}
+                  id={safeStr(found.id) || wanted}
+                  slug={safeStr(found.slug) || wanted}
+                  brand={brand || undefined}
+                  category={category || undefined}
+                  seller={seller || undefined}
+                  rowNumber={rowNumber ?? undefined}
+                  sourceUrl={sourceUrl || undefined}
+                />
+              </div>
             </div>
           </aside>
+        </div>
+      </div>
+
+      {/* Mobile bottom buy bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-black/72 backdrop-blur-xl">
+        <div
+          className={[
+            "mx-auto w-full max-w-5xl",
+            "pl-[calc(16px+env(safe-area-inset-left))] pr-[calc(16px+env(safe-area-inset-right))]",
+            "pt-3 pb-[calc(12px+env(safe-area-inset-bottom))]",
+          ].join(" ")}
+        >
+          <div className="rounded-3xl border border-white/10 bg-white/[0.05] p-3 shadow-[0_20px_90px_rgba(0,0,0,0.55)]">
+            <div className="flex items-baseline justify-between gap-3">
+              <div className="text-[11px] text-white/55 tracking-[0.22em] uppercase">
+                Prezzo stimato
+              </div>
+              <div className="text-[16px] font-extrabold text-white/95">{eurLabel}</div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <AgentBtn
+                href={usfansUrl || undefined}
+                label="USFans"
+                iconSrc="/agents/usfans.png"
+                variant="primary"
+                size="sm"
+              />
+              <AgentBtn
+                href={mulebuyUrl || undefined}
+                label="MuleBuy"
+                iconSrc="/agents/mulebuy.png"
+                variant="secondary"
+                size="sm"
+              />
+            </div>
+          </div>
         </div>
       </div>
     </main>
