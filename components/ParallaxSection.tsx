@@ -10,6 +10,9 @@ type Props = {
   childrenWidth?: "normal" | "wide";
   decor?: "none" | "orbs" | "shapes";
   decorIntensity?: number;
+
+  /** ✅ nuovo: dove mostrare il decor */
+  decorMode?: "all" | "mobile" | "desktop";
 };
 
 export default function ParallaxSection({
@@ -19,16 +22,26 @@ export default function ParallaxSection({
   description,
   children,
   childrenWidth = "normal",
-  decor = "orbs",          // ✅ default sicuro
+  decor = "orbs",
   decorIntensity = 18,
+  decorMode = "all",
 }: Props) {
+  const decorVisibilityClass =
+    decorMode === "mobile"
+      ? "md:hidden"
+      : decorMode === "desktop"
+      ? "hidden md:block"
+      : "";
+
   return (
     <section id={id} className="cc-section ps-section">
       {decor !== "none" && (
-        <ParallaxDecor
-          intensity={decorIntensity}
-          variant={decor === "shapes" ? "shapes" : "orbs"}
-        />
+        <div className={decorVisibilityClass}>
+          <ParallaxDecor
+            intensity={decorIntensity}
+            variant={decor === "shapes" ? "shapes" : "orbs"}
+          />
+        </div>
       )}
 
       <div className="cc-section-wrap">
