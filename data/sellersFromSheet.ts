@@ -222,7 +222,7 @@ export async function getSellersAndCards(): Promise<{
       .map((r: any) => {
         const id = v(r, "id");
         const name = v(r, "name");
-        const tagsRaw = v(r, "tags") || v(r, "specialities") || v(r, "brands");
+        const tagsRaw = v(r, "tags") || v(r, "specialities") || v(r, "specialties") || v(r, "brands");
         if (!id || !name) return null;
 
         return {
@@ -266,10 +266,18 @@ export async function getSellersAndCards(): Promise<{
 }
 
 /**
- * ✅ Adapter per la Home
+ * ✅ Adapter per la Home / UI
+ * IMPORTANTISSIMO: esporta anche "specialties" così la UI non mostra "Nessuna specialty"
  */
 export async function getSellersFromSheet(): Promise<
-  { name: string; description?: string; tags?: string[]; verified?: boolean; href?: string }[]
+  {
+    name: string;
+    description?: string;
+    tags?: string[];
+    specialties?: string[]; // ✅ AGGIUNTO
+    verified?: boolean;
+    href?: string;
+  }[]
 > {
   try {
     const { sellers } = await getSellersAndCards();
@@ -279,6 +287,7 @@ export async function getSellersFromSheet(): Promise<
       name: string;
       description?: string;
       tags?: string[];
+      specialties?: string[]; // ✅ AGGIUNTO
       verified?: boolean;
       href?: string;
     }[] = [];
@@ -297,6 +306,7 @@ export async function getSellersFromSheet(): Promise<
       out.push({
         name,
         tags,
+        specialties: tags, // ✅ ECCO LA CHIAVE: specialità = tags
         verified: true,
         href,
         description:
