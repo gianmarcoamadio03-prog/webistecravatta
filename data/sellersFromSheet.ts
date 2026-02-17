@@ -6,6 +6,12 @@ import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
 import type { Seller, SellerCard } from "./sellersShared";
 
+type SellerWithImage = Seller & {
+  // ✅ extra fields (non rompono nulla)
+  image?: string | null;
+  previewImages?: string[];
+};
+
 function mustEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env: ${name}`);
@@ -145,6 +151,25 @@ function splitTags(raw: string): string[] {
   return out;
 }
 
+// ✅ per colonne url: image / previewImages
+function splitUrls(raw: string): string[] {
+  if (!raw) return [];
+  const parts = raw
+    .split(/[\n\r,;|]+/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    const k = p.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out;
+}
+
 /* ---------------- retry + cache (anti 503) ---------------- */
 
 function isRetryable(err: any) {
@@ -181,7 +206,7 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 3) {
 }
 
 type CacheKey = string;
-type CacheVal = { at: number; data: { sellers: Seller[]; cards: SellerCard[] } };
+type CacheVal = { at: number; data: { sellers: SellerWithImage[]; cards: SellerCard[] } };
 
 function cacheStore(): Map<CacheKey, CacheVal> {
   const g = globalThis as any;
@@ -218,23 +243,43 @@ export async function getSellersAndCards(): Promise<{
     const sellerRows = await withRetry(() => sellersSheet.getRows(), 3);
     const cardRows = await withRetry(() => cardsSheet.getRows(), 3);
 
-    const sellers: Seller[] = sellerRows
+    const sellers: SellerWithImage[] = sellerRows
       .map((r: any) => {
         const id = v(r, "id");
         const name = v(r, "name");
-        const tagsRaw = v(r, "tags") || v(r, "specialities") || v(r, "specialties") || v(r, "brands");
+        const tagsRaw =
+          v(r, "tags") || v(r, "specialities") || v(r, "specialties") || v(r, "brands");
+
+        // ✅ NUOVO: colonna G "image"
+        const imageRaw = v(r, "image") || v(r, "cover") || "";
+
+        // ✅ opzionale: se in futuro vuoi più immagini
+        const previewRaw = v(r, "previewImages") || v(r, "preview_images") || "";
+
         if (!id || !name) return null;
+
+        const image = (imageRaw || "").trim() || null;
+
+        // ✅ previewImages: prima l'image, poi eventuali altre
+        const previewImages = [
+          ...splitUrls(imageRaw),
+          ...splitUrls(previewRaw),
+        ].filter(Boolean);
 
         return {
           id,
           name,
           tags: splitTags(tagsRaw),
+
+          image,
+          previewImages,
+
           yupoo_url: v(r, "yupoo_url") || null,
           whatsapp: v(r, "whatsapp") || null,
           store_url: v(r, "store_url") || null,
-        } satisfies Seller;
+        } satisfies SellerWithImage;
       })
-      .filter(Boolean) as Seller[];
+      .filter(Boolean) as SellerWithImage[];
 
     const cards: SellerCard[] = cardRows
       .map((r: any) => {
@@ -267,14 +312,16 @@ export async function getSellersAndCards(): Promise<{
 
 /**
  * ✅ Adapter per la Home / UI
- * IMPORTANTISSIMO: esporta anche "specialties" così la UI non mostra "Nessuna specialty"
+ * - specialties = tags (no “Nessuna specialty”)
+ * - previewImages = colonna image
  */
 export async function getSellersFromSheet(): Promise<
   {
     name: string;
     description?: string;
     tags?: string[];
-    specialties?: string[]; // ✅ AGGIUNTO
+    specialties?: string[];
+    previewImages?: string[];
     verified?: boolean;
     href?: string;
   }[]
@@ -287,12 +334,13 @@ export async function getSellersFromSheet(): Promise<
       name: string;
       description?: string;
       tags?: string[];
-      specialties?: string[]; // ✅ AGGIUNTO
+      specialties?: string[];
+      previewImages?: string[];
       verified?: boolean;
       href?: string;
     }[] = [];
 
-    for (const s of sellers) {
+    for (const s of sellers as any[]) {
       const name = (s?.name ?? "").trim();
       if (!name) continue;
 
@@ -300,13 +348,15 @@ export async function getSellersFromSheet(): Promise<
       if (seen.has(k)) continue;
       seen.add(k);
 
-      const tags = Array.isArray((s as any).tags) ? (s as any).tags : [];
-      const href = (s as any).store_url || (s as any).yupoo_url || "/sellers";
+      const tags = Array.isArray(s.tags) ? s.tags : [];
+      const href = s.store_url || s.yupoo_url || "/sellers";
+      const previewImages = Array.isArray(s.previewImages) ? s.previewImages : [];
 
       out.push({
         name,
         tags,
-        specialties: tags, // ✅ ECCO LA CHIAVE: specialità = tags
+        specialties: tags,
+        previewImages, // ✅ ora la UI può usare previewImages[0]
         verified: true,
         href,
         description:
