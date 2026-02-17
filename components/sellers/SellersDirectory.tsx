@@ -9,6 +9,7 @@ export type Seller = {
   verified?: boolean;
   specialties?: string[];
   previewImages?: string[];
+  image?: string;
 
   url?: string;
   yupoo?: string;
@@ -30,6 +31,21 @@ export type Seller = {
   [key: string]: any;
 };
 
+export type SellersDirectoryProps = { sellers: Seller[] };
+
+function isUrl(v: string) {
+  return /^https?:\/\//i.test((v || "").trim());
+}
+
+function normalizeImg(raw: string) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (isUrl(s)) return s;
+  if (s.startsWith("/")) return s;
+  if (s.includes("/")) return `/${s.replace(/^\/+/, "")}`;
+  return `/sellers/${s}`;
+}
+
 function pickImages(s: Seller): string[] {
   const arr =
     (Array.isArray(s.previewImages) && s.previewImages) ||
@@ -37,17 +53,31 @@ function pickImages(s: Seller): string[] {
     (Array.isArray((s as any).images) && (s as any).images) ||
     (Array.isArray((s as any).preview) && (s as any).preview) ||
     [];
-  return arr.map((x: any) => String(x || "").trim()).filter(Boolean).slice(0, 8);
+
+  const fromArray = arr.map((x: any) => normalizeImg(String(x || ""))).filter(Boolean);
+
+  const single = normalizeImg(String((s as any).image || (s as any).avatar || ""));
+  const merged = single ? [single, ...fromArray] : fromArray;
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of merged) {
+    if (seen.has(u)) continue;
+    seen.add(u);
+    out.push(u);
+  }
+  return out.slice(0, 8);
+}
+
+function pickAvatar(s: Seller): string {
+  const imgs = pickImages(s);
+  return imgs[0] || "";
 }
 
 function pickItemsCount(s: Seller): number | null {
   const v = (s.itemsCount ?? s.items_count ?? (s as any).items ?? (s as any).count) as any;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
-}
-
-function isUrl(v: string) {
-  return /^https?:\/\//i.test((v || "").trim());
 }
 
 function toWhatsAppUrl(vRaw: string): string {
@@ -101,7 +131,6 @@ function scoreForSort(s: Seller) {
   return featured * 1_000_000 + scoreN * 10_000 + rankBoost * 100 + verified * 50 + items;
 }
 
-/** Divider “hero” */
 function BarsDivider({ size = "lg" }: { size?: "lg" | "md" }) {
   const wA = size === "lg" ? "w-24" : "w-16";
   const wB = size === "lg" ? "w-10" : "w-8";
@@ -126,7 +155,6 @@ function HeroSectionTitle({
   tone?: "primary" | "secondary";
 }) {
   const isPrimary = tone === "primary";
-
   return (
     <div className="text-center">
       <div className="relative inline-block">
@@ -139,7 +167,6 @@ function HeroSectionTitle({
               "radial-gradient(closest-side at 50% 50%, rgba(255,255,255,0.16), transparent 70%)",
           }}
         />
-
         <h2
           className={[
             "relative font-semibold tracking-[-0.01em] text-white",
@@ -148,12 +175,10 @@ function HeroSectionTitle({
         >
           {title}
         </h2>
-
         <div className="mt-2 text-[11px] uppercase tracking-[0.38em] text-white/45">
           Curated picks
         </div>
       </div>
-
       <BarsDivider size={isPrimary ? "lg" : "md"} />
     </div>
   );
@@ -233,16 +258,11 @@ function FeaturedCard({ s }: { s: Seller }) {
 }
 
 /**
- * ✅ Carousel SOLO mobile:
- * - loop infinito
- * - auto-scroll (visivamente: sinistra -> destra)
- * - fade pulito ai bordi schermo (MASK, niente overlay)
- * - drag manuale (pausa e poi riprende)
+ * Carousel mobile (come il tuo)
  */
 function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
-
   const [hasOverflow, setHasOverflow] = useState(false);
 
   const halfRef = useRef(0);
@@ -265,7 +285,6 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
   const pauseFor = (ms = 1400) => {
     paused.current = true;
     syncPos();
-
     if (resumeTimer.current) clearTimeout(resumeTimer.current);
     resumeTimer.current = setTimeout(() => {
       syncPos();
@@ -273,7 +292,6 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
     }, ms);
   };
 
-  // misura metà loop (robusta) + overflow + init
   useEffect(() => {
     const sc = scrollerRef.current;
     const tr = trackRef.current;
@@ -302,7 +320,7 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
 
       if (!initedRef.current && half > 0) {
         initedRef.current = true;
-        posRef.current = half; // start in mezzo
+        posRef.current = half;
         sc.scrollLeft = half;
       }
     };
@@ -321,7 +339,6 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
     };
   }, [sellers, loopItems.length]);
 
-  // auto-loop (lento) — disabilita se reduced motion
   useEffect(() => {
     const sc = scrollerRef.current;
     if (!sc) return;
@@ -336,8 +353,8 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
     let raf = 0;
     let last = performance.now();
 
-    const SPEED = 20; // ✅ più lento
-    const DIR = -1; // decrementa => card scorrono verso destra visivamente
+    const SPEED = 20;
+    const DIR = -1;
 
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -347,11 +364,8 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
 
       if (half > 0 && !paused.current) {
         let next = posRef.current + DIR * SPEED * dt;
-
-        // wrap morbido (0..half]
         if (next <= 0) next += half;
         if (next > half) next -= half;
-
         posRef.current = next;
         sc.scrollLeft = next;
       }
@@ -363,7 +377,6 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
     return () => cancelAnimationFrame(raf);
   }, [loopItems.length]);
 
-  // pausa su input utente
   useEffect(() => {
     const sc = scrollerRef.current;
     if (!sc) return;
@@ -382,7 +395,6 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
     };
   }, []);
 
-  // drag pointer
   useEffect(() => {
     const sc = scrollerRef.current;
     if (!sc) return;
@@ -439,8 +451,7 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
 
   if (!sellers.length) return null;
 
-  // ✅ fade “pulito” con mask (niente overlay)
-  const FADE = 38; // px (aumenta a 44 se lo vuoi più morbido)
+  const FADE = 38;
 
   return (
     <div className="md:hidden mt-10 relative w-screen left-1/2 -translate-x-1/2">
@@ -449,7 +460,6 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
         className={[
           "relative z-10 overflow-x-auto overflow-y-hidden",
           "[-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          // ✅ padding interno (le card non finiscono sotto il fade)
           "pl-[calc(16px+env(safe-area-inset-left))] pr-[calc(16px+env(safe-area-inset-right))]",
         ].join(" ")}
         style={{
@@ -491,7 +501,7 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
   );
 }
 
-export default function SellersDirectory({ sellers }: { sellers: Seller[] }) {
+export default function SellersDirectory({ sellers }: SellersDirectoryProps) {
   const filtered = useMemo(() => {
     const list = Array.isArray(sellers) ? sellers : [];
     const out = list
@@ -538,14 +548,12 @@ export default function SellersDirectory({ sellers }: { sellers: Seller[] }) {
         <section className="mb-16">
           <HeroSectionTitle title="Best seller of the month" tone="primary" />
 
-          {/* DESKTOP/TABLET */}
           <div className="hidden md:grid mt-10 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {featured.map((s) => (
               <FeaturedCard key={String(s.name)} s={s} />
             ))}
           </div>
 
-          {/* MOBILE */}
           <FeaturedCarouselMobile sellers={featured} />
         </section>
 
@@ -556,30 +564,43 @@ export default function SellersDirectory({ sellers }: { sellers: Seller[] }) {
             {listBars.map((s) => {
               const specs = (s.specialties || []).slice(0, 3).map(String);
               const wa = pickWhatsApp(s);
+              const avatar = pickAvatar(s);
 
               return (
                 <div
                   key={String(s.name)}
                   className="group flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 backdrop-blur transition hover:bg-white/[0.06]"
                 >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="truncate text-sm font-semibold text-white">
-                        {String(s.name)}
-                      </div>
-                      {s.verified ? (
-                        <span className="shrink-0 inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                          Verificato
+                  <div className="min-w-0 flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full border border-white/10 bg-white/10 overflow-hidden grid place-items-center shrink-0">
+                      {avatar ? (
+                        <img src={avatar} alt="" className="h-full w-full object-cover" loading="lazy" />
+                      ) : (
+                        <span className="text-sm font-semibold text-white/80">
+                          {String(s.name).slice(0, 1).toUpperCase()}
                         </span>
-                      ) : null}
+                      )}
                     </div>
 
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {specs.length ? (
-                        specs.map((x) => chip(x))
-                      ) : (
-                        <span className="text-[11px] text-white/45">Nessuna specialty</span>
-                      )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className="truncate text-sm font-semibold text-white">
+                          {String(s.name)}
+                        </div>
+                        {s.verified ? (
+                          <span className="shrink-0 inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
+                            Verificato
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {specs.length ? (
+                          specs.map((x) => chip(x))
+                        ) : (
+                          <span className="text-[11px] text-white/45">Nessuna specialty</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

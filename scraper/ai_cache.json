@@ -157469,7 +157469,7 @@
   },
   "meta": {
     "createdAt": "2026-02-12T02:35:10.421Z",
-    "updatedAt": "2026-02-15T07:39:40.644Z",
+    "updatedAt": "2026-02-17T10:58:06.681Z",
     "version": "2026-02-11 | flush+checkpoint+resume + skip-existing-preopen + disk-ai-cache + album-concurrency + single-writer + optional heavy AI fallbacks + hardcap bytes + adaptive backoff + graceful shutdown + queued-append fix"
   }
 }

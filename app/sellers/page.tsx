@@ -13,5 +13,5 @@ export const metadata: Metadata = {
 
 export default async function SellersPage() {
   const sellers = await getSellersFromSheet();
-  return <SellersDirectory sellers={sellers} />;
+  return <SellersDirectory sellers={sellers as any} />;
 }

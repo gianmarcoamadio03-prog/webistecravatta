@@ -12,7 +12,17 @@ type SellerLike = {
   previewImages?: string[];
   preview_images?: string[];
   images?: string[];
+  image?: string;
 };
+
+function normalizeImg(raw: string) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.startsWith("/")) return s;
+  if (s.includes("/")) return `/${s.replace(/^\/+/, "")}`;
+  return `/sellers/${s}`;
+}
 
 function pickUrl(s: SellerLike) {
   return (s.url || s.yupoo || s.yupoo_url || "").trim();
@@ -20,7 +30,12 @@ function pickUrl(s: SellerLike) {
 
 function pickImages(s: SellerLike) {
   const arr = (s.previewImages || (s as any).preview_images || (s as any).images || []) as string[];
-  return (Array.isArray(arr) ? arr : []).filter(Boolean).slice(0, 3);
+  const fromArr = (Array.isArray(arr) ? arr : []).map(normalizeImg).filter(Boolean);
+
+  const single = normalizeImg(String((s as any).image || ""));
+  const merged = single ? [single, ...fromArr] : fromArr;
+
+  return Array.from(new Set(merged)).slice(0, 3);
 }
 
 export default function SellersBlock({ sellers }: { sellers: SellerLike[] }) {
@@ -31,7 +46,6 @@ export default function SellersBlock({ sellers }: { sellers: SellerLike[] }) {
       data-parallax-root
       className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl p-4 shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
     >
-      {/* ✅ decor unificato */}
       <ParallaxDecor variant="shapes" intensity={16} />
 
       <div className="relative z-10">
@@ -39,9 +53,7 @@ export default function SellersBlock({ sellers }: { sellers: SellerLike[] }) {
           <div className="min-w-0">
             <div className="text-[11px] tracking-[0.22em] text-white/40">BEST SELLERS</div>
             <div className="mt-1 text-lg font-semibold text-white">Rubrica premium</div>
-            <div className="mt-1 text-sm text-white/60">
-              Selezione rapida, accesso diretto, preview pulite.
-            </div>
+            <div className="mt-1 text-sm text-white/60">Selezione rapida, accesso diretto, preview pulite.</div>
           </div>
 
           <Link
@@ -64,8 +76,8 @@ export default function SellersBlock({ sellers }: { sellers: SellerLike[] }) {
                 className="group flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 hover:bg-white/[0.06] transition"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-10 w-10 rounded-full border border-white/10 bg-white/10 grid place-items-center text-sm font-semibold text-white/80">
-                    {name.slice(0, 1).toUpperCase()}
+                  <div className="h-10 w-10 rounded-full border border-white/10 bg-white/10 overflow-hidden grid place-items-center text-sm font-semibold text-white/80">
+                    {imgs[0] ? <img src={imgs[0]} alt="" className="h-full w-full object-cover" /> : name.slice(0, 1).toUpperCase()}
                   </div>
 
                   <div className="min-w-0">
@@ -80,8 +92,7 @@ export default function SellersBlock({ sellers }: { sellers: SellerLike[] }) {
 
                     {imgs.length ? (
                       <div className="mt-2 flex items-center gap-2">
-                        {imgs.map((u, i) => (
-                          // eslint-disable-next-line @next/next/no-img-element
+                        {imgs.slice(0, 3).map((u, i) => (
                           <img
                             key={`${u}-${i}`}
                             src={u}

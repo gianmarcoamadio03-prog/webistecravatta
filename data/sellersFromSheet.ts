@@ -6,11 +6,8 @@ import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
 import type { Seller, SellerCard } from "./sellersShared";
 
-type SellerWithImage = Seller & {
-  // ✅ extra fields (non rompono nulla)
-  image?: string | null;
-  previewImages?: string[];
-};
+// ✅ placeholder unico per TUTTI i seller quando "image" è vuota
+const DEFAULT_SELLER_IMAGE = "/sellers/yupoo.webp";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -151,25 +148,6 @@ function splitTags(raw: string): string[] {
   return out;
 }
 
-// ✅ per colonne url: image / previewImages
-function splitUrls(raw: string): string[] {
-  if (!raw) return [];
-  const parts = raw
-    .split(/[\n\r,;|]+/g)
-    .map((x) => x.trim())
-    .filter(Boolean);
-
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const p of parts) {
-    const k = p.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(p);
-  }
-  return out;
-}
-
 /* ---------------- retry + cache (anti 503) ---------------- */
 
 function isRetryable(err: any) {
@@ -199,14 +177,14 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 3) {
     } catch (e) {
       lastErr = e;
       if (!isRetryable(e) || i === tries - 1) break;
-      await sleep(250 * Math.pow(2, i)); // 250ms, 500ms, 1s
+      await sleep(250 * Math.pow(2, i));
     }
   }
   throw lastErr;
 }
 
 type CacheKey = string;
-type CacheVal = { at: number; data: { sellers: SellerWithImage[]; cards: SellerCard[] } };
+type CacheVal = { at: number; data: { sellers: Seller[]; cards: SellerCard[] } };
 
 function cacheStore(): Map<CacheKey, CacheVal> {
   const g = globalThis as any;
@@ -228,13 +206,12 @@ export async function getSellersAndCards(): Promise<{
   const store = cacheStore();
   const cached = store.get(key);
 
-  // cache breve (dev friendly)
-  const TTL = 60_000; // 60s
+  // ✅ in dev cache più corta per vedere subito i cambi
+  const TTL = process.env.NODE_ENV === "development" ? 2_000 : 60_000;
   if (cached && Date.now() - cached.at < TTL) return cached.data;
 
   try {
     const doc = new GoogleSpreadsheet(SHEET_ID, auth());
-
     await withRetry(() => doc.loadInfo(), 3);
 
     const sellersSheet = pickSheetOrThrow(doc, TAB_SELLERS, 0);
@@ -243,43 +220,33 @@ export async function getSellersAndCards(): Promise<{
     const sellerRows = await withRetry(() => sellersSheet.getRows(), 3);
     const cardRows = await withRetry(() => cardsSheet.getRows(), 3);
 
-    const sellers: SellerWithImage[] = sellerRows
+    const sellers: Seller[] = sellerRows
       .map((r: any) => {
         const id = v(r, "id");
         const name = v(r, "name");
+
         const tagsRaw =
-          v(r, "tags") || v(r, "specialities") || v(r, "specialties") || v(r, "brands");
-
-        // ✅ NUOVO: colonna G "image"
-        const imageRaw = v(r, "image") || v(r, "cover") || "";
-
-        // ✅ opzionale: se in futuro vuoi più immagini
-        const previewRaw = v(r, "previewImages") || v(r, "preview_images") || "";
+          v(r, "tags") ||
+          v(r, "specialities") ||
+          v(r, "specialties") ||
+          v(r, "brands");
 
         if (!id || !name) return null;
 
-        const image = (imageRaw || "").trim() || null;
+        // ✅ colonna "image" nel tab sellers (o alias)
+        const image = v(r, "image") || v(r, "avatar") || v(r, "photo") || "";
 
-        // ✅ previewImages: prima l'image, poi eventuali altre
-        const previewImages = [
-          ...splitUrls(imageRaw),
-          ...splitUrls(previewRaw),
-        ].filter(Boolean);
-
-        return {
+        return ({
           id,
           name,
           tags: splitTags(tagsRaw),
-
-          image,
-          previewImages,
-
           yupoo_url: v(r, "yupoo_url") || null,
           whatsapp: v(r, "whatsapp") || null,
           store_url: v(r, "store_url") || null,
-        } satisfies SellerWithImage;
+          image: image || null,
+        } as any) as Seller;
       })
-      .filter(Boolean) as SellerWithImage[];
+      .filter(Boolean) as Seller[];
 
     const cards: SellerCard[] = cardRows
       .map((r: any) => {
@@ -304,43 +271,41 @@ export async function getSellersAndCards(): Promise<{
     store.set(key, { at: Date.now(), data });
     return data;
   } catch (e) {
-    // se ho cache vecchia, uso quella invece di “rompere” la home
     if (cached?.data) return cached.data;
     throw e;
   }
 }
 
 /**
- * ✅ Adapter per la Home / UI
- * - specialties = tags (no “Nessuna specialty”)
- * - previewImages = colonna image
+ * ✅ Adapter per la UI
+ * - include image + previewImages
+ * - fallback automatico se image è vuota
  */
 export async function getSellersFromSheet(): Promise<
   {
+    id?: string;
     name: string;
     description?: string;
     tags?: string[];
     specialties?: string[];
-    previewImages?: string[];
     verified?: boolean;
     href?: string;
+
+    image?: string; // immagine principale (già con fallback)
+    previewImages?: string[]; // almeno 1
+
+    whatsapp?: string | null;
+    yupoo_url?: string | null;
+    store_url?: string | null;
   }[]
 > {
   try {
     const { sellers } = await getSellersAndCards();
 
     const seen = new Set<string>();
-    const out: {
-      name: string;
-      description?: string;
-      tags?: string[];
-      specialties?: string[];
-      previewImages?: string[];
-      verified?: boolean;
-      href?: string;
-    }[] = [];
+    const out: any[] = [];
 
-    for (const s of sellers as any[]) {
+    for (const s of sellers) {
       const name = (s?.name ?? "").trim();
       if (!name) continue;
 
@@ -348,17 +313,30 @@ export async function getSellersFromSheet(): Promise<
       if (seen.has(k)) continue;
       seen.add(k);
 
-      const tags = Array.isArray(s.tags) ? s.tags : [];
-      const href = s.store_url || s.yupoo_url || "/sellers";
-      const previewImages = Array.isArray(s.previewImages) ? s.previewImages : [];
+      const tags = Array.isArray((s as any).tags) ? (s as any).tags : [];
+
+      // ✅ fallback automatico
+      const rawImage = String((s as any).image || "").trim();
+      const image = rawImage || DEFAULT_SELLER_IMAGE;
+      const previewImages = [image];
+
+      const href = (s as any).store_url || (s as any).yupoo_url || "/sellers";
 
       out.push({
+        id: (s as any).id,
         name,
         tags,
         specialties: tags,
-        previewImages, // ✅ ora la UI può usare previewImages[0]
         verified: true,
         href,
+
+        image,
+        previewImages,
+
+        whatsapp: (s as any).whatsapp ?? null,
+        yupoo_url: (s as any).yupoo_url ?? null,
+        store_url: (s as any).store_url ?? null,
+
         description:
           tags.length > 0
             ? `Specialità: ${tags.slice(0, 3).join(" · ")}`

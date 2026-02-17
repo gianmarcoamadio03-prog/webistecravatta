@@ -1,42 +1,43 @@
 // data/sellersShared.ts
-
-export type StoreType = "weidian" | "taobao" | "other";
-
 export type Seller = {
   id: string;
   name: string;
   tags: string[];
-  yupoo_url?: string | null;
-  whatsapp?: string | null;
-  store_url?: string | null;
+  yupoo_url: string | null;
+  whatsapp: string | null;
+  store_url: string | null;
+  image: string | null; // ✅ NEW
 };
 
 export type SellerCard = {
   id: string;
   seller_id: string;
   title: string;
-  description?: string | null;
-  image?: string | null;
+  description: string | null;
+  image: string | null;
 };
 
-export function inferStoreType(url?: string | null): StoreType {
-  const u = (url ?? "").toLowerCase();
-  if (!u) return "other";
-  if (u.includes("weidian.com")) return "weidian";
-  if (u.includes("taobao.com") || u.includes("tmall.com")) return "taobao";
-  return "other";
-}
+export function toWhatsAppHref(input?: string | null): string {
+  const raw = (input ?? "").toString().trim();
+  if (!raw) return "";
 
-export function toWhatsAppHref(input?: string | null): string | null {
-  const s = (input ?? "").trim();
-  if (!s) return null;
+  // già un link wa
+  if (raw.startsWith("https://wa.me/") || raw.includes("api.whatsapp.com")) return raw;
 
-  if (s.includes("wa.me/") || s.includes("whatsapp.com/")) return s;
-
-  let digits = s.replace(/[^\d]/g, "");
-  if (!digits) return null;
-
-  if (digits.startsWith("00")) digits = digits.slice(2);
+  // normalizza numero (tieni solo cifre)
+  const digits = raw.replace(/[^\d]/g, "");
+  if (!digits) return "";
 
   return `https://wa.me/${digits}`;
+}
+
+export function inferStoreType(
+  url?: string | null
+): "weidian" | "taobao" | "yupoo" | "other" | null {
+  const u = (url ?? "").toString().toLowerCase().trim();
+  if (!u) return null;
+  if (u.includes("weidian.com")) return "weidian";
+  if (u.includes("taobao.com")) return "taobao";
+  if (u.includes("yupoo.com")) return "yupoo";
+  return "other";
 }
