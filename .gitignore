@@ -18,3 +18,5 @@ node_modules
 # scraper runtime files (local)
 scraper/ai_cache.json
 scraper/checkpoint.json
+.vercel
+.env*.local

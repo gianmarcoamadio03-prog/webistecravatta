@@ -1,5 +1,6 @@
 import SpreadsheetPreviewCarouselClient from "@/components/SpreadsheetPreviewCarouselClient";
 import { getItemsHead } from "@/data/itemsFromSheet";
+import { imgProxy } from "@/src/lib/imgProxy";
 
 type Variant = "home" | "default" | "sellers";
 
@@ -12,18 +13,35 @@ type Card = {
   priceEur?: number | null;
 };
 
+type YupooSize = "small" | "medium" | "big";
+
 /**
- * ✅ PERFORMANCE: in home/carousel servono immagini leggere.
- * Convertiamo /big.* -> /medium.* (Yupoo), mantenendo query (auth_key).
+ * ✅ PERFORMANCE: in home/carousel servono immagini SUPER leggere.
+ * Yupoo tipicamente espone /small.jpg /medium.jpg /big.jpg (o /thumb.jpg).
+ * Qui forziamo SEMPRE a "small" riscrivendo la parte finale del pathname.
  */
-function yupooListSize(u: string, size: "medium" | "small" = "medium") {
+function yupooListSize(u: string, size: YupooSize = "small") {
   const raw = (u || "").trim();
   if (!raw) return "";
+
   try {
     const url = new URL(raw);
     const host = url.hostname.toLowerCase();
     if (!host.includes("yupoo.com")) return raw;
-    url.pathname = url.pathname.replace(/\/big\.(jpg|jpeg|png|webp)$/i, `/${size}.$1`);
+
+    // riscrive /small|medium|big|thumb.ext -> /{size}.ext
+    const re = /\/(small|medium|big|thumb)\.(jpg|jpeg|png|webp)$/i;
+    if (re.test(url.pathname)) {
+      url.pathname = url.pathname.replace(re, `/${size}.$2`);
+      return url.toString();
+    }
+
+    // fallback (casi semplici)
+    url.pathname = url.pathname
+      .replace(/\/big\.(jpg|jpeg|png|webp)$/i, `/${size}.$1`)
+      .replace(/\/medium\.(jpg|jpeg|png|webp)$/i, `/${size}.$1`)
+      .replace(/\/small\.(jpg|jpeg|png|webp)$/i, `/${size}.$1`);
+
     return url.toString();
   } catch {
     return raw;
@@ -41,7 +59,8 @@ function toProxyIfNeeded(url: string) {
     low.includes("u.yupoo.com") ||
     low.includes("wd.yupoo.com");
 
-  return isYupoo ? `/api/img?url=${encodeURIComponent(u)}` : u;
+  // ✅ QUI: forziamo SEMPRE small nel proxy
+  return isYupoo ? imgProxy(u, "small") : u;
 }
 
 function normTag(s: string) {
@@ -63,14 +82,7 @@ function splitTags(v: any): string[] {
 
 /** prende tag da più campi + fallback: scansiona stringhe della row */
 function getTagsAny(it: any): string[] {
-  const candidates = [
-    it?.tags,
-    it?.tag,
-    it?.badge,
-    it?.home_tag,
-    it?.showcase,
-    it?.HOME,
-  ];
+  const candidates = [it?.tags, it?.tag, it?.badge, it?.home_tag, it?.showcase, it?.HOME];
 
   const out: string[] = [];
   for (const c of candidates) out.push(...splitTags(c));
@@ -156,9 +168,7 @@ export default async function SpreadsheetPreviewCarousel({
   const badge = (process.env.HOME_SHOWCASE_BADGE || "WEEKLY BEST").toString();
 
   const tagsEnvRaw =
-    process.env.HOME_SHOWCASE_TAGS ||
-    process.env.HOME_SHOWCASE_TAG ||
-    "WEEKLY BEST";
+    process.env.HOME_SHOWCASE_TAGS || process.env.HOME_SHOWCASE_TAG || "WEEKLY BEST";
 
   const tagsEnv = tagsEnvRaw
     .split(/[,;|]+/g)
@@ -175,9 +185,7 @@ export default async function SpreadsheetPreviewCarousel({
     items = await getItemsHead(poolSize);
   } catch (e) {
     console.error("[SpreadsheetPreviewCarousel] getItemsHead failed:", e);
-    return (
-      <div className="lg-empty">Anteprima momentaneamente non disponibile.</div>
-    );
+    return <div className="lg-empty">Anteprima momentaneamente non disponibile.</div>;
   }
 
   let chosen = items;
@@ -194,9 +202,9 @@ export default async function SpreadsheetPreviewCarousel({
 
   const cards: Card[] = chosen
     .map((it) => {
-      // ✅ con itemsFromSheet.ts abbiamo già cover/images calcolate.
+      // ✅ cover: forziamo a SMALL se Yupoo lo supporta (small/medium/big/thumb)
       const rawCover = String(it?.cover || it?.images?.[0] || pickCoverSmart(it) || "");
-      const cover = toProxyIfNeeded(yupooListSize(rawCover, "medium"));
+      const cover = toProxyIfNeeded(yupooListSize(rawCover, "small"));
 
       const subtitle = `${it.category || "Item"} • ${it.seller || ""}`.trim();
 

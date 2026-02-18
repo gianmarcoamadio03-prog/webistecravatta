@@ -1,7 +1,9 @@
 "use client";
 
+import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Lightbox from "@/components/Lightbox";
+import { imgProxy, forceImgSize } from "@/src/lib/imgProxy";
 
 const BLOCK_KEY = "__BLOCK_GALLERY_OPEN_UNTIL__";
 
@@ -14,13 +16,22 @@ function galleryBlocked() {
   }
 }
 
+// ✅ accetta anche URL già proxati (nel caso ti capitassero)
 function isValidUrl(u: any) {
-  return typeof u === "string" && /^https?:\/\//i.test(u.trim());
+  if (typeof u !== "string") return false;
+  const s = u.trim();
+  return /^https?:\/\//i.test(s) || s.startsWith("/api/img?");
 }
 
-function toProxyIfNeeded(url: string) {
+function toProxyIfNeeded(url: string, size: "small" | "medium" | "big") {
   const u = (url || "").trim();
   if (!u) return "";
+  if (u.startsWith("data:")) return u;
+
+  // già proxato => forza size
+  if (u.includes("/api/img?url=") || u.startsWith("/api/img?")) {
+    return forceImgSize(u, size);
+  }
 
   const low = u.toLowerCase();
   const isYupoo =
@@ -29,7 +40,7 @@ function toProxyIfNeeded(url: string) {
     low.includes("u.yupoo.com") ||
     low.includes("wd.yupoo.com");
 
-  return isYupoo ? `/api/img?url=${encodeURIComponent(u)}` : u;
+  return isYupoo ? imgProxy(u, size) : u;
 }
 
 export default function Gallery({
@@ -42,20 +53,23 @@ export default function Gallery({
   const safe = useMemo(() => {
     const cleaned = (Array.isArray(images) ? images : [])
       .filter((u) => isValidUrl(u))
-      .map((u) => u.trim());
+      .map((u) => (u as string).trim());
 
     const keyOf = (u: string) => {
       try {
+        // se è già /api/img, deduplica per url= interno
+        if (u.startsWith("/api/img?")) return u.toLowerCase();
+
         const url = new URL(u);
         const host = url.hostname.toLowerCase();
-        if (host.includes("photo.yupoo.com"))
-          return `${host}${url.pathname}`.toLowerCase();
-        return url.toString().toLowerCase();
+        if (host.includes("photo.yupoo.com")) return `${host}${url.pathname}`.toLowerCase();
+        return `${host}${url.pathname}${url.search}`.toLowerCase();
       } catch {
         return u.toLowerCase();
       }
     };
 
+    // preferisci l'URL “migliore” (di solito con query auth_key ecc.)
     const better = (a: string, b: string) => {
       try {
         const qa = new URL(a).search.length;
@@ -82,12 +96,16 @@ export default function Gallery({
     return order.map((k) => chosenByKey.get(k)!).filter(Boolean) as string[];
   }, [images]);
 
-  const pics = useMemo(() => safe.map(toProxyIfNeeded), [safe]);
+  // ✅ BIG per HERO + LIGHTBOX
+  const picsBig = useMemo(() => safe.map((u) => toProxyIfNeeded(u, "big")), [safe]);
+
+  // ✅ SMALL per THUMBS
+  const picsThumb = useMemo(() => safe.map((u) => toProxyIfNeeded(u, "small")), [safe]);
 
   const [idx, setIdx] = useState(0);
   const [open, setOpen] = useState(false);
 
-  const max = pics.length;
+  const max = picsBig.length;
 
   useEffect(() => {
     if (!max) return;
@@ -121,14 +139,8 @@ export default function Gallery({
   useEffect(() => {
     const el = thumbsRef.current;
     if (!el) return;
-    const active = el.querySelector<HTMLButtonElement>(
-      `button[data-idx="${idx}"]`
-    );
-    active?.scrollIntoView({
-      behavior: "smooth",
-      inline: "center",
-      block: "nearest",
-    });
+    const active = el.querySelector<HTMLButtonElement>(`button[data-idx="${idx}"]`);
+    active?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }, [idx]);
 
   const drag = useRef({
@@ -210,12 +222,7 @@ export default function Gallery({
   }, []);
 
   // swipe su hero (mobile)
-  const swipe = useRef({
-    active: false,
-    x: 0,
-    y: 0,
-    id: -1,
-  });
+  const swipe = useRef({ active: false, x: 0, y: 0, id: -1 });
 
   const onHeroDown = (e: React.PointerEvent) => {
     swipe.current.active = true;
@@ -251,15 +258,12 @@ export default function Gallery({
 
   return (
     <div className="p-3 sm:p-4">
-      {/* HERO (fisso: 4:3 + clamp altezza su mobile + img che riempie il box) */}
+      {/* HERO (BIG) */}
       <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-black/55">
         <button
           type="button"
           className="relative block w-full focus:outline-none"
-          style={{
-            aspectRatio: "4 / 3",
-            maxHeight: "60vh", // ✅ evita “hero gigante” su mobile
-          }}
+          style={{ aspectRatio: "4 / 3", maxHeight: "60vh" }}
           onPointerDown={onHeroDown}
           onPointerUp={onHeroUp}
           onPointerCancel={() => (swipe.current.active = false)}
@@ -269,9 +273,8 @@ export default function Gallery({
           }}
           aria-label="Apri gallery"
         >
-          {/* ✅ img deve essere w/h FULL altrimenti su mobile “scappa” */}
           <img
-            src={pics[idx]}
+            src={picsBig[idx]}
             alt={title}
             draggable={false}
             loading="eager"
@@ -314,12 +317,12 @@ export default function Gallery({
         </div>
       </div>
 
-      {/* THUMBS (più piccole su mobile, meno “casino”) */}
+      {/* THUMBS (SMALL) */}
       <div
         ref={thumbsRef}
         className="mt-3 flex gap-2 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden cursor-grab select-none"
       >
-        {pics.map((u, i) => {
+        {picsThumb.map((u, i) => {
           const active = i === idx;
           return (
             <button
@@ -346,17 +349,16 @@ export default function Gallery({
                 decoding="async"
                 className="h-full w-full object-cover"
               />
-              {active ? (
-                <div className="absolute inset-0 ring-2 ring-white/15 pointer-events-none" />
-              ) : null}
+              {active ? <div className="absolute inset-0 ring-2 ring-white/15 pointer-events-none" /> : null}
             </button>
           );
         })}
       </div>
 
+      {/* LIGHTBOX (BIG) */}
       <Lightbox
         open={open}
-        images={pics}
+        images={picsBig}
         title={title}
         initialIndex={idx}
         onClose={() => setOpen(false)}

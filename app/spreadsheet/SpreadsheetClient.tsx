@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toUsFansProductUrl, toMulebuyProductUrl } from "../../data/affiliate";
+import { imgProxy, type ImgSize } from "@/src/lib/imgProxy";
 
 type SheetItem = {
   id?: string;
@@ -97,8 +98,7 @@ function pickPics(x: SheetItem) {
 
   for (let i = 1; i <= 8; i++) push((x as any)[`img${i}`]);
 
-  const extra =
-    (x as any).img_extra ?? (x as any).images_extra ?? (x as any).extra_images;
+  const extra = (x as any).img_extra ?? (x as any).images_extra ?? (x as any).extra_images;
 
   if (typeof extra === "string" && extra.trim()) {
     extra
@@ -148,9 +148,7 @@ function getDirectAgentUrl(item: SheetItem, agent: "usfans" | "mulebuy") {
       : ["mulebuy", "mulebuyLink", "mulebuy_link", "mulebuyUrl", "mulebuy_url"];
 
   const domainCheck =
-    agent === "usfans"
-      ? (s: string) => s.includes("usfans.com")
-      : (s: string) => s.includes("mulebuy.com");
+    agent === "usfans" ? (s: string) => s.includes("usfans.com") : (s: string) => s.includes("mulebuy.com");
 
   for (const k of keys) {
     const v = item?.[k];
@@ -192,29 +190,49 @@ function formatEur(n: number) {
   return `€ ${n.toFixed(2)}`;
 }
 
-function proxMaybe(u: string) {
-  const raw = (u ?? "").trim();
-  if (!raw) return "";
-  if (raw.startsWith("data:")) return raw;
-  if (raw.includes("/api/img?url=")) return raw;
-  return `/api/img?url=${encodeURIComponent(raw)}`;
+/**
+ * ✅ Helpers immagini: forziamo proxy + size=small in LISTA (spreadsheet)
+ */
+function isYupooUrl(raw: string) {
+  try {
+    const u = new URL(raw);
+    return u.hostname.toLowerCase().includes("yupoo.com");
+  } catch {
+    return raw.toLowerCase().includes("yupoo.com");
+  }
 }
 
-function yupooListSize(u: string, size: "medium" | "small" = "medium") {
-  const raw = (u ?? "").trim();
-  if (!raw) return "";
-  if (raw.includes("/api/img?url=")) return raw;
+function forceApiImgSize(raw: string, size: ImgSize = "small") {
+  const s = (raw ?? "").trim();
+  if (!s) return "";
+
+  if (!s.includes("/api/img?url=")) return s;
 
   try {
-    const url = new URL(raw);
-    const host = url.hostname.toLowerCase();
-    if (!host.includes("yupoo.com")) return raw;
+    const base = s.startsWith("http") ? undefined : "http://localhost";
+    const u = new URL(s, base);
 
-    url.pathname = url.pathname.replace(/\/big\.(jpg|jpeg|png|webp)$/i, `/${size}.$1`);
-    return url.toString();
+    if (u.pathname.endsWith("/api/img")) {
+      u.searchParams.set("size", size);
+      if (!s.startsWith("http")) return `${u.pathname}?${u.searchParams.toString()}`;
+      return u.toString();
+    }
+
+    return s;
   } catch {
-    return raw;
+    if (!s.includes("size=")) return `${s}${s.includes("?") ? "&" : "?"}size=${size}`;
+    return s;
   }
+}
+
+function coverSrc(raw: string, size: ImgSize = "small") {
+  const s = (raw ?? "").trim();
+  if (!s) return "";
+  if (s.startsWith("data:")) return s;
+
+  if (s.includes("/api/img?url=")) return forceApiImgSize(s, size);
+  if (isYupooUrl(s)) return imgProxy(s, size);
+  return s;
 }
 
 function makeShuffleSeed() {
@@ -385,43 +403,18 @@ export default function SpreadsheetClient({
   const [pickerOpen, setPickerOpen] = useState<PickerKind | null>(null);
   const [pickerQuery, setPickerQuery] = useState("");
 
-  const order: "default" | "random" =
-    searchParams?.get("order") === "default" ? "default" : "random";
+  const order: "default" | "random" = searchParams?.get("order") === "default" ? "default" : "random";
   const shuffleKey = searchParams?.get("shuffle") ?? "";
 
-  useEffect(() => {
-    if (order === "random" && !shuffleKey) {
-      const params = new URLSearchParams(searchParams?.toString() ?? "");
-      params.set("order", "random");
-      params.set("shuffle", makeShuffleSeed());
-      router.replace(`/spreadsheet?${params.toString()}`);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order, shuffleKey]);
-
-  useEffect(() => {
-    setQ(initialFilters?.q ?? "");
-    setSellerFilter(cleanFilter(initialFilters?.seller));
-    setBrandFilter(cleanFilter(initialFilters?.brand));
-    setCategoryFilter(cleanFilter(initialFilters?.category));
-  }, [initialFilters?.q, initialFilters?.seller, initialFilters?.brand, initialFilters?.category]);
-
-  // lock scroll quando la bottom-sheet è aperta
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [pickerOpen]);
+  // ✅ FIX DIGITAZIONE MOBILE (iOS/Android): composition + non clobberare q mentre scrivi
+  const composingRef = useRef(false);
+  const ignoreNextChangeRef = useRef(false);
+  const pendingQRef = useRef<string | null>(null);
+  const lastEditAtRef = useRef(0);
 
   const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function buildHref(
-    nextPage: number,
-    next?: Partial<{ q: string; seller: string; brand: string; category: string }>
-  ) {
+  function buildHref(nextPage: number, next?: Partial<{ q: string; seller: string; brand: string; category: string }>) {
     const params = new URLSearchParams();
 
     const qv = (next?.q ?? q).trim();
@@ -448,19 +441,34 @@ export default function SpreadsheetClient({
 
   function go(
     nextPage: number,
-    next?: Partial<{ q: string; seller: string; brand: string; category: string }>
+    next?: Partial<{ q: string; seller: string; brand: string; category: string }>,
+    mode: "push" | "replace" = "push"
   ) {
-    router.push(buildHref(nextPage, next));
+    const href = buildHref(nextPage, next);
+    if (mode === "replace") router.replace(href);
+    else router.push(href);
+  }
+
+  function clearQuery() {
+    if (qTimer.current) clearTimeout(qTimer.current);
+    qTimer.current = null;
+    setQ("");
+    go(1, { q: "" }, "replace"); // ✅ non sporcate history durante typing
   }
 
   function scheduleSearch(nextQ: string) {
+    if (composingRef.current) {
+      pendingQRef.current = nextQ;
+      return;
+    }
+
     if (qTimer.current) clearTimeout(qTimer.current);
     qTimer.current = setTimeout(() => {
-      go(1, { q: nextQ });
+      go(1, { q: nextQ }, "replace"); // ✅ replace: niente history + meno jank
     }, 350);
   }
 
-  function resetFiltersKeepOrder() {
+  function resetFiltersKeepOrder(mode: "push" | "replace" = "replace") {
     if (qTimer.current) clearTimeout(qTimer.current);
     qTimer.current = null;
 
@@ -479,8 +487,45 @@ export default function SpreadsheetClient({
     }
 
     const qs = params.toString();
-    router.push(qs ? `/spreadsheet?${qs}` : "/spreadsheet");
+    const href = qs ? `/spreadsheet?${qs}` : "/spreadsheet";
+    if (mode === "replace") router.replace(href);
+    else router.push(href);
   }
+
+  useEffect(() => {
+    if (order === "random" && !shuffleKey) {
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      params.set("order", "random");
+      params.set("shuffle", makeShuffleSeed());
+      router.replace(`/spreadsheet?${params.toString()}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order, shuffleKey]);
+
+  // sync da server → state (MA non sovrascrivere q mentre l'utente sta scrivendo)
+  useEffect(() => {
+    const now = Date.now();
+    const isFocused = typeof document !== "undefined" && document.activeElement === inputRef.current;
+    const recentlyEdited = now - lastEditAtRef.current < 900;
+
+    if (!(isFocused && recentlyEdited)) {
+      setQ(initialFilters?.q ?? "");
+    }
+
+    setSellerFilter(cleanFilter(initialFilters?.seller));
+    setBrandFilter(cleanFilter(initialFilters?.brand));
+    setCategoryFilter(cleanFilter(initialFilters?.category));
+  }, [initialFilters?.q, initialFilters?.seller, initialFilters?.brand, initialFilters?.category]);
+
+  // lock scroll quando la bottom-sheet è aperta
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [pickerOpen]);
 
   const backQS = searchParams?.toString() ?? "";
   const backParam = backQS ? `?back=${encodeURIComponent(backQS)}` : "";
@@ -554,8 +599,7 @@ export default function SpreadsheetClient({
     categoryFilter !== "all" ||
     sortMode !== "default";
 
-  const sortLabel =
-    sortMode === "price_desc" ? "Prezzo ↓" : sortMode === "price_asc" ? "Prezzo ↑" : "";
+  const sortLabel = sortMode === "price_desc" ? "Prezzo ↓" : sortMode === "price_asc" ? "Prezzo ↑" : "";
 
   const container = "mx-auto w-full max-w-[1700px] px-4 sm:px-5";
 
@@ -621,7 +665,6 @@ export default function SpreadsheetClient({
 
   const totalLabel = hasFilters ? "Risultati" : "Totale";
 
-  // desktop classes (invariato)
   const selectClass =
     "h-9 rounded-full px-3 bg-white/5 border border-white/10 text-[12px] text-white/90 outline-none focus:border-white/25";
   const btnCompact =
@@ -643,12 +686,15 @@ export default function SpreadsheetClient({
   const pagerClass =
     "flex items-center h-11 rounded-full border border-white/10 bg-black/45 backdrop-blur-xl overflow-hidden shadow-[0_20px_90px_rgba(0,0,0,0.45)]";
 
-  // ✅ mobile (nuovo)
+  // ✅ mobile
   const mobileWrap = "sm:hidden mx-auto w-full max-w-[520px]";
   const navCircle =
     "h-10 w-10 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] text-white/85 inline-flex items-center justify-center transition";
+
+  // ✅ iOS fix: input font-size >= 16px (anti-zoom + typing jank)
   const searchInput =
-    "h-10 w-full rounded-full pl-4 pr-10 bg-white/5 border border-white/10 text-[13px] text-white/90 outline-none focus:border-white/25";
+    "h-10 w-full rounded-full pl-4 pr-10 bg-white/5 border border-white/10 text-[16px] text-white/90 outline-none focus:border-white/25";
+
   const pillSecondary =
     "h-10 w-full rounded-full border border-white/10 bg-white/5 hover:bg-white/8 text-[13px] text-white/85 transition inline-flex items-center justify-center";
   const panel =
@@ -704,10 +750,7 @@ export default function SpreadsheetClient({
     if (pickerOpen === "category") {
       return {
         title: "Categoria",
-        options: [
-          { value: "all", label: "Categoria: Tutte" },
-          ...categories.map((c) => ({ value: c, label: c })),
-        ],
+        options: [{ value: "all", label: "Categoria: Tutte" }, ...categories.map((c) => ({ value: c, label: c }))],
       };
     }
     return base;
@@ -737,31 +780,76 @@ export default function SpreadsheetClient({
 
     if (kind === "seller") {
       setSellerFilter(value);
-      go(1, { seller: value });
+      go(1, { seller: value }, "push");
       closePicker();
       return;
     }
 
     if (kind === "brand") {
       setBrandFilter(value);
-      go(1, { brand: value });
+      go(1, { brand: value }, "push");
       closePicker();
       return;
     }
 
     setCategoryFilter(value);
-    go(1, { category: value });
+    go(1, { category: value }, "push");
     closePicker();
   }
+
+  // shared handlers per input
+  const onSearchChange = (v: string) => {
+    lastEditAtRef.current = Date.now();
+    setQ(v);
+
+    if (ignoreNextChangeRef.current) {
+      ignoreNextChangeRef.current = false;
+      return;
+    }
+
+    if (composingRef.current) return;
+
+    if (v.length === 0) {
+      clearQuery();
+      return;
+    }
+
+    scheduleSearch(v);
+  };
+
+  const onSearchCompositionStart = () => {
+    composingRef.current = true;
+  };
+
+  const onSearchCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+    composingRef.current = false;
+    ignoreNextChangeRef.current = true;
+
+    const v = e.currentTarget.value;
+    pendingQRef.current = null;
+
+    if (v.length === 0) clearQuery();
+    else scheduleSearch(v);
+  };
+
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (q.trim()) clearQuery();
+      else resetFiltersKeepOrder("replace");
+    }
+    if (e.key === "Enter") {
+      go(1, { q }, "replace");
+    }
+  };
 
   return (
     <div className="min-h-screen w-full">
       {/* STICKY TOP */}
       <div className="sticky top-0 z-50 border-b border-white/10 bg-black/55 backdrop-blur-xl">
         <div className={`${container} pt-3 pb-3 sm:pt-7 sm:pb-5`}>
-          {/* ✅ MOBILE HEADER (centrato + bilanciato) */}
+          {/* ✅ MOBILE HEADER */}
           <div className={mobileWrap}>
-            {/* row A */}
             <div className="grid grid-cols-[40px_1fr_40px] gap-2 items-center">
               <Link href="/" className={navCircle} title="Home" aria-label="Home">
                 ←
@@ -771,32 +859,23 @@ export default function SpreadsheetClient({
                 <input
                   ref={inputRef}
                   value={q}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (!v.trim()) {
-                      resetFiltersKeepOrder();
-                      return;
-                    }
-                    setQ(v);
-                    scheduleSearch(v);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      resetFiltersKeepOrder();
-                    }
-                    if (e.key === "Enter") {
-                      go(1, { q });
-                    }
-                  }}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  onCompositionStart={onSearchCompositionStart}
+                  onCompositionEnd={onSearchCompositionEnd}
+                  onKeyDown={onSearchKeyDown}
                   placeholder="Cerca (brand, seller, categoria, titolo)…"
                   className={searchInput}
+                  inputMode="search"
+                  enterKeyHint="search"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
                 />
 
                 {q && (
                   <button
                     type="button"
-                    onClick={resetFiltersKeepOrder}
+                    onClick={clearQuery}
                     className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 text-sm transition"
                     title="Svuota"
                     aria-label="Svuota"
@@ -806,11 +885,9 @@ export default function SpreadsheetClient({
                 )}
               </div>
 
-              {/* spacer per bilanciare visivamente */}
               <div className="h-10 w-10" aria-hidden="true" />
             </div>
 
-            {/* row B */}
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -827,7 +904,6 @@ export default function SpreadsheetClient({
               </button>
             </div>
 
-            {/* row C: PANEL FILTRI (mobile) */}
             {filtersOpen && (
               <div className={`mt-3 ${panel}`}>
                 <div className={panelInner}>
@@ -873,20 +949,17 @@ export default function SpreadsheetClient({
               </div>
             )}
 
-            {/* chips attivi (mobile + desktop) */}
             {hasFilters ? (
               <div className="mt-3">
                 <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap px-1 [-webkit-overflow-scrolling:touch]">
-                  {q.trim() ? (
-                    <FilterChip label={`Ricerca: ${q.trim()}`} onClear={resetFiltersKeepOrder} />
-                  ) : null}
+                  {q.trim() ? <FilterChip label={`Ricerca: ${q.trim()}`} onClear={clearQuery} /> : null}
 
                   {sellerFilter !== "all" ? (
                     <FilterChip
                       label={`Seller: ${sellerFilter}`}
                       onClear={() => {
                         setSellerFilter("all");
-                        go(1, { seller: "all" });
+                        go(1, { seller: "all" }, "push");
                       }}
                     />
                   ) : null}
@@ -896,7 +969,7 @@ export default function SpreadsheetClient({
                       label={`Brand: ${brandFilter}`}
                       onClear={() => {
                         setBrandFilter("all");
-                        go(1, { brand: "all" });
+                        go(1, { brand: "all" }, "push");
                       }}
                     />
                   ) : null}
@@ -906,19 +979,16 @@ export default function SpreadsheetClient({
                       label={`Categoria: ${categoryFilter}`}
                       onClear={() => {
                         setCategoryFilter("all");
-                        go(1, { category: "all" });
+                        go(1, { category: "all" }, "push");
                       }}
                     />
                   ) : null}
 
-                  {sortMode !== "default" ? (
-                    <FilterChip label={sortLabel} onClear={() => setSortMode("default")} />
-                  ) : null}
+                  {sortMode !== "default" ? <FilterChip label={sortLabel} onClear={() => setSortMode("default")} /> : null}
                 </div>
               </div>
             ) : null}
 
-            {/* Totali (mobile) */}
             <div className="mt-3 flex items-center justify-between gap-2">
               <div className="text-[12px] text-white/55">
                 {totalLabel}: <span className="text-white/90 font-semibold">{totalItems}</span>
@@ -929,9 +999,8 @@ export default function SpreadsheetClient({
             </div>
           </div>
 
-          {/* ✅ DESKTOP HEADER (invariato) */}
+          {/* ✅ DESKTOP HEADER */}
           <div className="hidden sm:block">
-            {/* ROW A desktop */}
             <div className="relative flex items-center justify-center">
               <Link
                 href="/"
@@ -945,32 +1014,23 @@ export default function SpreadsheetClient({
                 <input
                   ref={inputRef}
                   value={q}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (!v.trim()) {
-                      resetFiltersKeepOrder();
-                      return;
-                    }
-                    setQ(v);
-                    scheduleSearch(v);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      resetFiltersKeepOrder();
-                    }
-                    if (e.key === "Enter") {
-                      go(1, { q });
-                    }
-                  }}
+                  onChange={(e) => onSearchChange(e.target.value)}
+                  onCompositionStart={onSearchCompositionStart}
+                  onCompositionEnd={onSearchCompositionEnd}
+                  onKeyDown={onSearchKeyDown}
                   placeholder="Cerca (brand, seller, categoria, titolo)…"
                   className="h-11 w-full rounded-full px-4 pr-10 bg-white/5 border border-white/10 text-sm text-white/90 outline-none focus:border-white/25"
+                  inputMode="search"
+                  enterKeyHint="search"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
                 />
 
                 {q && (
                   <button
                     type="button"
-                    onClick={resetFiltersKeepOrder}
+                    onClick={clearQuery}
                     className="absolute right-3 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 text-sm transition"
                     title="Svuota"
                   >
@@ -980,7 +1040,6 @@ export default function SpreadsheetClient({
               </div>
             </div>
 
-            {/* ROW B desktop */}
             <div className="mt-4 flex justify-center">
               <div className="w-full max-w-[1200px] flex flex-wrap items-center justify-center gap-2">
                 <select
@@ -999,7 +1058,7 @@ export default function SpreadsheetClient({
                   onChange={(e) => {
                     const v = e.target.value;
                     setSellerFilter(v);
-                    go(1, { seller: v });
+                    go(1, { seller: v }, "push");
                   }}
                   style={{ colorScheme: "dark" }}
                   className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
@@ -1017,7 +1076,7 @@ export default function SpreadsheetClient({
                   onChange={(e) => {
                     const v = e.target.value;
                     setBrandFilter(v);
-                    go(1, { brand: v });
+                    go(1, { brand: v }, "push");
                   }}
                   style={{ colorScheme: "dark" }}
                   className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
@@ -1035,7 +1094,7 @@ export default function SpreadsheetClient({
                   onChange={(e) => {
                     const v = e.target.value;
                     setCategoryFilter(v);
-                    go(1, { category: v });
+                    go(1, { category: v }, "push");
                   }}
                   style={{ colorScheme: "dark" }}
                   className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
@@ -1062,20 +1121,17 @@ export default function SpreadsheetClient({
               </div>
             </div>
 
-            {/* ROW C desktop: chips */}
             {hasFilters ? (
               <div className="mt-3 flex justify-center">
                 <div className="w-full max-w-[1200px] flex items-center gap-2 overflow-x-auto whitespace-nowrap px-1 [-webkit-overflow-scrolling:touch]">
-                  {q.trim() ? (
-                    <FilterChip label={`Ricerca: ${q.trim()}`} onClear={resetFiltersKeepOrder} />
-                  ) : null}
+                  {q.trim() ? <FilterChip label={`Ricerca: ${q.trim()}`} onClear={clearQuery} /> : null}
 
                   {sellerFilter !== "all" ? (
                     <FilterChip
                       label={`Seller: ${sellerFilter}`}
                       onClear={() => {
                         setSellerFilter("all");
-                        go(1, { seller: "all" });
+                        go(1, { seller: "all" }, "push");
                       }}
                     />
                   ) : null}
@@ -1085,7 +1141,7 @@ export default function SpreadsheetClient({
                       label={`Brand: ${brandFilter}`}
                       onClear={() => {
                         setBrandFilter("all");
-                        go(1, { brand: "all" });
+                        go(1, { brand: "all" }, "push");
                       }}
                     />
                   ) : null}
@@ -1095,19 +1151,16 @@ export default function SpreadsheetClient({
                       label={`Categoria: ${categoryFilter}`}
                       onClear={() => {
                         setCategoryFilter("all");
-                        go(1, { category: "all" });
+                        go(1, { category: "all" }, "push");
                       }}
                     />
                   ) : null}
 
-                  {sortMode !== "default" ? (
-                    <FilterChip label={sortLabel} onClear={() => setSortMode("default")} />
-                  ) : null}
+                  {sortMode !== "default" ? <FilterChip label={sortLabel} onClear={() => setSortMode("default")} /> : null}
                 </div>
               </div>
             ) : null}
 
-            {/* ROW D desktop */}
             <div className="mt-4 flex items-center justify-between gap-2">
               <div className="text-[12px] text-white/55">
                 {totalLabel}: <span className="text-white/90 font-semibold">{totalItems}</span>
@@ -1117,12 +1170,7 @@ export default function SpreadsheetClient({
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={shuffleNow}
-                  className={shufflePrimaryClass}
-                  title="Mischia articoli"
-                >
+                <button type="button" onClick={shuffleNow} className={shufflePrimaryClass} title="Mischia articoli">
                   <ShuffleIcon className="h-[18px] w-[18px]" />
                   Shuffle
                 </button>
@@ -1137,9 +1185,7 @@ export default function SpreadsheetClient({
         {noResults ? (
           <div className="mx-auto max-w-[520px] text-center rounded-3xl border border-white/10 bg-white/[0.04] p-8">
             <div className="text-white/90 font-semibold text-lg">Nessun risultato</div>
-            <div className="mt-2 text-sm text-white/55">
-              Prova a cambiare filtri o cercare un termine diverso.
-            </div>
+            <div className="mt-2 text-sm text-white/55">Prova a cambiare filtri o cercare un termine diverso.</div>
 
             <div className="mt-5 flex items-center justify-center gap-2">
               <button
@@ -1168,6 +1214,8 @@ export default function SpreadsheetClient({
             >
               {filtered.map((x) => {
                 const meta = [x.seller, x.category].filter(Boolean).join(" • ");
+                const img = x.cover ? coverSrc(x.cover, "small") : "";
+
                 return (
                   <div
                     key={x.slug}
@@ -1198,9 +1246,9 @@ export default function SpreadsheetClient({
                     />
 
                     <div className="relative w-full aspect-[4/3] bg-black/20 overflow-hidden">
-                      {x.cover ? (
+                      {img ? (
                         <img
-                          src={proxMaybe(yupooListSize(x.cover))}
+                          src={img}
                           alt={x.title}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
                           draggable={false}
@@ -1227,11 +1275,7 @@ export default function SpreadsheetClient({
                         {x.title}
                       </div>
 
-                      {meta ? (
-                        <div className="mt-2 text-[11px] text-white/55 truncate">{meta}</div>
-                      ) : (
-                        <div className="mt-2 h-[16px]" />
-                      )}
+                      {meta ? <div className="mt-2 text-[11px] text-white/55 truncate">{meta}</div> : <div className="mt-2 h-[16px]" />}
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         <AgentButton href={x.usfans || undefined} label="USFans" accent />
@@ -1323,7 +1367,11 @@ export default function SpreadsheetClient({
                       value={pickerQuery}
                       onChange={(e) => setPickerQuery(e.target.value)}
                       placeholder="Cerca…"
-                      className="h-11 w-full rounded-full px-4 bg-white/5 border border-white/10 text-[14px] text-white/90 outline-none focus:border-white/25"
+                      className="h-11 w-full rounded-full px-4 bg-white/5 border border-white/10 text-[16px] text-white/90 outline-none focus:border-white/25"
+                      inputMode="search"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
                     />
                   </div>
                 ) : null}
@@ -1340,9 +1388,7 @@ export default function SpreadsheetClient({
                         className={[
                           "w-full h-12 px-4 rounded-2xl flex items-center justify-between text-left transition",
                           "border border-transparent",
-                          selected
-                            ? "bg-white/10 border-white/10"
-                            : "hover:bg-white/7",
+                          selected ? "bg-white/10 border-white/10" : "hover:bg-white/7",
                         ].join(" ")}
                       >
                         <span className="text-[15px] text-white/90 truncate">{opt.label}</span>

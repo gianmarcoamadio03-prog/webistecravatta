@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { forceImgSize } from "@/src/lib/imgProxy";
 
 type Variant = "home" | "default" | "sellers";
 
@@ -47,10 +48,9 @@ export default function SpreadsheetPreviewCarouselClient({
     const el = scrollerRef.current;
     if (!el) return;
 
-    const io = new IntersectionObserver(
-      ([entry]) => setInView(entry.isIntersecting),
-      { threshold: 0.2 }
-    );
+    const io = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), {
+      threshold: 0.2,
+    });
 
     io.observe(el);
     return () => io.disconnect();
@@ -151,9 +151,6 @@ export default function SpreadsheetPreviewCarouselClient({
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
-      // ✅ niente “scroll-jacking”: lasciamo lo scroll verticale della pagina libero
-      // Intercettiamo solo quando l’utente fa un gesto chiaramente orizzontale (trackpad)
-      // oppure tiene premuto SHIFT.
       const absX = Math.abs(e.deltaX);
       const absY = Math.abs(e.deltaY);
       const wantsHorizontal = absX > absY || e.shiftKey;
@@ -217,61 +214,65 @@ export default function SpreadsheetPreviewCarouselClient({
 
       <div ref={scrollerRef} className="sheet-preview-scroller">
         <div ref={trackRef} className="sheet-preview-track">
-          {loop.map((it, idx) => (
-            <Link
-              key={`${it.slug}-${idx}`}
-              href={`/item/${encodeURIComponent(it.slug)}`}
-              // ✅ premium feel: prefetch delle pagine item quando entrano in viewport
-              className="sheet-card"
-              onClick={(e) => {
-                if (draggedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  draggedRef.current = false;
-                }
-              }}
-              aria-label={`Apri ${it.title}`}
-            >
-              <div className="sheet-card-media" aria-hidden>
-                {it.cover.startsWith("/api/img?") ? (
-                  // /api/img è già un proxy con cache → evitiamo doppia ottimizzazione
-                  <img
-                    src={it.cover}
-                    alt={it.title}
-                    className="sheet-card-img"
-                    loading={idx < 2 ? "eager" : "lazy"}
-                    decoding="async"
-                    draggable={false}
-                  />
-                ) : (
-                  <Image
-                    src={it.cover}
-                    alt={it.title}
-                    fill
-                    sizes="(max-width: 640px) 280px, 360px"
-                    quality={70}
-                    priority={idx < 2}
-                    className="sheet-card-img"
-                  />
-                )}
-              </div>
+          {loop.map((it, idx) => {
+            // ✅ FORZA SEMPRE SMALL (anche se arriva medium o yupoo diretto)
+            const cover = forceImgSize(it.cover, "small");
+            const usePlainImg = cover.startsWith("/api/img?") || cover.startsWith("data:");
 
-              <div className="sheet-card-overlay" aria-hidden />
-
-              <div className="sheet-card-meta">
-                <div className="sheet-badge">{it.badge}</div>
-                <div className="sheet-title">{it.title}</div>
-
-                <div className="sheet-subRow">
-                  <div className="sheet-sub">{it.subtitle}</div>
-
-                  {typeof it.priceEur === "number" && (
-                    <div className="sheet-price">€{it.priceEur.toFixed(2)}</div>
+            return (
+              <Link
+                key={`${it.slug}-${idx}`}
+                href={`/item/${encodeURIComponent(it.slug)}`}
+                className="sheet-card"
+                onClick={(e) => {
+                  if (draggedRef.current) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    draggedRef.current = false;
+                  }
+                }}
+                aria-label={`Apri ${it.title}`}
+              >
+                <div className="sheet-card-media" aria-hidden>
+                  {usePlainImg ? (
+                    <img
+                      src={cover}
+                      alt={it.title}
+                      className="sheet-card-img"
+                      loading={idx < 2 ? "eager" : "lazy"}
+                      decoding="async"
+                      draggable={false}
+                    />
+                  ) : (
+                    <Image
+                      src={cover}
+                      alt={it.title}
+                      fill
+                      sizes="(max-width: 640px) 280px, 360px"
+                      quality={70}
+                      priority={idx < 2}
+                      className="sheet-card-img"
+                    />
                   )}
                 </div>
-              </div>
-            </Link>
-          ))}
+
+                <div className="sheet-card-overlay" aria-hidden />
+
+                <div className="sheet-card-meta">
+                  <div className="sheet-badge">{it.badge}</div>
+                  <div className="sheet-title">{it.title}</div>
+
+                  <div className="sheet-subRow">
+                    <div className="sheet-sub">{it.subtitle}</div>
+
+                    {typeof it.priceEur === "number" && (
+                      <div className="sheet-price">€{it.priceEur.toFixed(2)}</div>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </div>
     </div>

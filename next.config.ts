@@ -2,21 +2,24 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
-    // per immagini esterne dirette (se ti servono)
+    // ✅ COST SAVER: evita l'optimizer di Next (/_next/image)
+    // (meno compute + meno invocations su Vercel)
+    unoptimized: true,
+
+    // ✅ allowlist solo domini che usi davvero
     remotePatterns: [
-      { protocol: "https", hostname: "**" },
-      { protocol: "http", hostname: "**" },
+      { protocol: "https", hostname: "photo.yupoo.com", pathname: "/**" },
+      { protocol: "https", hostname: "**.yupoo.com", pathname: "/**" },
+      { protocol: "https", hostname: "**.x.yupoo.com", pathname: "/**" },
+
+      // Se ti servono altri domini reali, aggiungili qui (weidian/taobao ecc)
+      // { protocol: "https", hostname: "**.weidian.com", pathname: "/**" },
+      // { protocol: "https", hostname: "item.taobao.com", pathname: "/**" },
     ],
 
-    // ✅ permette /api/img?url=....
-    // (omettendo "search" accetti tutte le query string)
-    localPatterns: [
-      { pathname: "/api/img" },
-      { pathname: "/api/img/**" },
-      { pathname: "/agents/**" },
-    ],
+    // ✅ solo asset locali veri
+    localPatterns: [{ pathname: "/agents/**" }],
 
-    // ✅ se in <Image quality={70} />
     qualities: [70, 75],
   },
 };
