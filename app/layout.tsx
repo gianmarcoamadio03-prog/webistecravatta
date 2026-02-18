@@ -1,7 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { Analytics } from "@vercel/analytics/react";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+
+import TelegramPopup from "@/components/TelegramPopup";
+import InfoPopup from "@/components/InfoPopup";
 
 export const metadata: Metadata = {
   title: "Cravatta",
@@ -26,6 +29,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         ].join(" ")}
       >
         {children}
+
+        {/* ✅ Home only (gestito dentro al componente) */}
+        <TelegramPopup delayMs={3000} />
+
+        {/* ✅ Solo /spreadsheet e /sellers */}
+       <InfoPopup
+  delayMs={2500}
+  showOn={["/spreadsheet", "/sellers"]}
+/>
+
+
         <Analytics />
       </body>
     </html>

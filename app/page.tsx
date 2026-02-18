@@ -9,6 +9,7 @@ import SellersHomeTeaser from "@/src/lib/components/home/SellersHomeTeaser";
 import QualityCheckHomeTeaser from "@/src/lib/components/home/QualityCheckHomeTeaser";
 
 import { getSellersFromSheet } from "@/data/sellersFromSheet";
+import LanguageMenu from "@/components/LanguageMenu";
 
 export const runtime = "nodejs";
 export const revalidate = 300;
@@ -33,16 +34,10 @@ function toPlainSeller(r: any): Seller | null {
 
   return {
     name,
-    verified: Boolean(
-      r?.verified ?? r?.Verified ?? r?.verificato ?? r?.Verificato ?? false
-    ),
+    verified: Boolean(r?.verified ?? r?.Verified ?? r?.verificato ?? r?.Verificato ?? false),
     specialties: toStringArr(r?.specialties ?? r?.Specialties ?? r?.tags),
-    previewImages: toStringArr(
-      r?.previewImages ?? r?.preview_images ?? r?.images ?? r?.preview
-    ),
-    whatsapp: String(
-      r?.whatsapp ?? r?.wa ?? r?.whatsappUrl ?? r?.contact ?? r?.whats ?? ""
-    ).trim(),
+    previewImages: toStringArr(r?.previewImages ?? r?.preview_images ?? r?.images ?? r?.preview),
+    whatsapp: String(r?.whatsapp ?? r?.wa ?? r?.whatsappUrl ?? r?.contact ?? r?.whats ?? "").trim(),
   };
 }
 
@@ -69,6 +64,9 @@ export default async function HomePage() {
 
   return (
     <main className="cc-home">
+      {/* ✅ MENU LINGUA (fixed, non rompe layout) */}
+      <LanguageMenu />
+
       {/* 1) HERO */}
       <section className="cc-section cc-section--hero">
         <HeroCarousel />
@@ -76,19 +74,11 @@ export default async function HomePage() {
       </section>
 
       {/* 2) SPREADSHEET (decor solo orbs, NO sagome) */}
-      <ParallaxSection
-        id="spreadsheet"
-        eyebrow=""
-        title="Spreadsheet"
-        description="I migliori finds per tutti i tuoi haul."
-        childrenWidth="wide"
-        decor="orbs"
-      >
+      <ParallaxSection id="spreadsheet" eyebrow="" title="Spreadsheet" childrenWidth="wide" decor="orbs">
         <div className="sheet-ctaRow">
           <Link href="/spreadsheet" className="sheet-cta">
             Entra nella Spreadsheet →
           </Link>
-          <div className="sheet-ctaSub">Scorri l’anteprima qui sotto.</div>
         </div>
 
         <div className="sheet-fullBleed">
@@ -106,9 +96,6 @@ export default async function HomePage() {
             <div className="ps-header">
               <div className="ps-eyebrow">AI</div>
               <h2 className="ps-title">AI Quality Check</h2>
-              <p className="ps-desc">
-                Controllo qualità automatico: ti dice se un item è valido prima di comprare.
-              </p>
 
               <div className="sheet-ctaRow">
                 <Link href="/quality-check" className="sheet-cta">
@@ -124,13 +111,7 @@ export default async function HomePage() {
       </section>
 
       {/* 5) COUPON (decor solo orbs, NO sagome) */}
-      <ParallaxSection
-        id="coupons"
-        eyebrow="SAVINGS"
-        title="Coupon"
-        description="Codici sconto aggiornati e link rapidi per risparmiare subito."
-        decor="orbs"
-      >
+      <ParallaxSection id="coupons" eyebrow="SAVINGS" title="Coupon" decor="orbs">
         <div className="sheet-ctaRow" style={{ alignItems: "center" }}>
           <ComingSoonPill />
           <div className="sheet-ctaSub">Stiamo completando la sezione.</div>
@@ -145,13 +126,7 @@ export default async function HomePage() {
       </ParallaxSection>
 
       {/* 6) TUTORIAL (decor solo orbs, NO sagome) */}
-      <ParallaxSection
-        id="tutorials"
-        eyebrow="GUIDE"
-        title="Tutorial"
-        description="Guide snelle per comprare senza perdere tempo: agent, spedizioni, QC e tips."
-        decor="orbs"
-      >
+      <ParallaxSection id="tutorials" eyebrow="GUIDE" title="Tutorial" decor="orbs">
         <div className="sheet-ctaRow" style={{ alignItems: "center" }}>
           <ComingSoonPill />
           <div className="sheet-ctaSub">Stiamo preparando le guide.</div>

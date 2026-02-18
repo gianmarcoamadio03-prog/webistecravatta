@@ -2405,3 +2405,13 @@
   .it-priceValue { font-size: 24px; }
   .it-card--side { padding: 12px; }
 }
+/* ✅ KILL DECOR su AI Quality Check (toglie icone/sagome “fantasma”) */
+[data-page="quality-check"] .ps-decor {
+  display: none !important;
+}
+/* Quality Check: niente parallax/decor */
+[data-page="quality-check"] .ps-decor,
+[data-page="quality-check"] .ps-shapes,
+[data-page="quality-check"] .ps-people {
+  display: none !important;
+}

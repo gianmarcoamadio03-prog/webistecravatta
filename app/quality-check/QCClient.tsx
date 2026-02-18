@@ -26,7 +26,7 @@ async function compressToBudgetJpeg(file: File): Promise<File> {
   try {
     if (!file.type?.startsWith("image/")) return file;
 
-    // HEIC: spesso il browser non lo ricomprime bene → lasciamo gestire al server (che risponde pulito)
+    // HEIC: spesso il browser non lo ricomprime bene → lasciamo gestire al server
     if (/heic/i.test(file.type)) return file;
 
     // già jpeg e piccolo: skip
@@ -351,7 +351,9 @@ export default function QCClient() {
 
       if (!res.ok) {
         if (data?.error === "HEIC_NOT_SUPPORTED") {
-          setError("Formato HEIC non supportato. Usa JPG/PNG (o abilita conversione lato telefono).");
+          setError(
+            "Formato HEIC non supportato. Usa JPG/PNG (o abilita conversione lato telefono)."
+          );
           return;
         }
 
@@ -408,8 +410,10 @@ export default function QCClient() {
       ? "inset(0 0% 0 0 round 9999px)"
       : `inset(0 ${100 - score}% 0 0 round 9999px)`;
 
+  const canAddMore = files.length < MAX_IMAGES && !loading;
+
   return (
-    <div className="w-full max-w-5xl">
+    <div className="w-full max-w-5xl pb-24 md:pb-0">
       <style>{`
         @keyframes shimmer {
           0% { transform: translateX(-70%); opacity: .20; }
@@ -449,6 +453,11 @@ export default function QCClient() {
                 Quality Check
               </div>
             </div>
+
+            {/* Mobile: micro-stepper leggero */}
+            <div className="md:hidden text-[12px] text-white/45">
+              1) Foto → 2) Note → 3) Risultato
+            </div>
           </div>
 
           <div className="mt-3 flex justify-center md:mt-0 md:absolute md:right-0 md:top-0 md:justify-end">
@@ -458,7 +467,7 @@ export default function QCClient() {
           </div>
         </div>
 
-        {/* UPLOAD */}
+        {/* UPLOAD (DESKTOP invariato + MOBILE strip) */}
         <div className="relative mt-4 rounded-3xl border border-white/10 bg-white/[0.03] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-white/80">
@@ -501,9 +510,70 @@ export default function QCClient() {
             </div>
           </div>
 
+          {/* ✅ MOBILE: strip foto + X (niente box enorme) */}
+          <div className="md:hidden mt-3">
+            {files.length === 0 ? (
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/55">
+                Nessuna foto caricata. Usa <span className="text-white/75 font-semibold">Aggiungi</span> in basso.
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] text-white/45">
+                    Foto caricate
+                  </div>
+                  <div className="flex gap-2">
+                    <TinyChip>Front</TinyChip>
+                    <TinyChip>Back</TinyChip>
+                    <TinyChip>Close-up</TinyChip>
+                    <TinyChip>Tag</TinyChip>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex gap-3 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">
+                  {previews.map((p, idx) => (
+                    <div
+                      key={p.url}
+                      className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/30"
+                    >
+                      <img
+                        src={p.url}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeAt(idx)}
+                        disabled={loading}
+                        className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/60 text-[12px] text-white/90 disabled:opacity-50"
+                        aria-label="Rimuovi"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+
+                  {files.length < MAX_IMAGES ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!loading) galleryRef.current?.click();
+                      }}
+                      className="h-16 w-16 shrink-0 rounded-xl border border-dashed border-white/15 bg-white/[0.02] text-sm text-white/60"
+                      disabled={loading}
+                    >
+                      +
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ✅ DESKTOP: dropzone originale (invariato) */}
           <div
             className={cn([
-              "mt-3 rounded-3xl border bg-black/20 transition relative overflow-hidden",
+              "hidden md:block mt-3 rounded-3xl border bg-black/20 transition relative overflow-hidden",
               dragOver ? "border-white/30 bg-white/[0.06]" : "border-white/10",
             ])}
             onDragOver={onDragOver}
@@ -577,32 +647,35 @@ export default function QCClient() {
                 </>
               )}
             </div>
+          </div>
 
-            {loading && LOADING_UI === "overlay" ? (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 backdrop-blur-md">
-                <div className="w-[92%] max-w-xl rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-[0_20px_70px_rgba(0,0,0,0.65)]">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="text-sm text-white/85">Analisi in corso…</div>
-                    <div className="text-xs text-white/50 tabular-nums">
-                      {progress}%
-                    </div>
-                  </div>
-                  <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                    <div
-                      className="h-full rounded-full bg-white/35 transition-[width] duration-200"
-                      style={{ width: `${progress}%` }}
-                    />
+          {/* ✅ overlay loading (vale per mobile + desktop) */}
+          {loading && LOADING_UI === "overlay" ? (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/35 backdrop-blur-md rounded-3xl">
+              <div className="w-[92%] max-w-xl rounded-3xl border border-white/10 bg-white/[0.06] p-5 shadow-[0_20px_70px_rgba(0,0,0,0.65)]">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="text-sm text-white/85">Analisi in corso…</div>
+                  <div className="text-xs text-white/50 tabular-nums">
+                    {progress}%
                   </div>
                 </div>
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-white/35 transition-[width] duration-200"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
               </div>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
           <div className="mt-3 flex flex-col md:flex-row gap-3">
             <div className="w-full">
               <textarea
                 value={notes}
-                onChange={(e) => setNotes(e.target.value.slice(0, NOTES_MAX_CHARS))}
+                onChange={(e) =>
+                  setNotes(e.target.value.slice(0, NOTES_MAX_CHARS))
+                }
                 placeholder="Note (opzionale) es: cosa vuoi controllare nello specifico…"
                 className="w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white/85 outline-none placeholder:text-white/30 focus:border-white/20"
                 rows={2}
@@ -669,7 +742,9 @@ export default function QCClient() {
 
           {!result && !loading ? (
             <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-white/45">
-              Carica le foto e avvia l’analisi.
+              {files.length === 0
+                ? "Carica 1–4 foto per iniziare."
+                : "Premi Esegui per avviare l’analisi."}
             </div>
           ) : null}
 
@@ -747,6 +822,36 @@ export default function QCClient() {
               </div>
             </div>
           ) : null}
+        </div>
+      </div>
+
+      {/* ✅ MOBILE: bottom bar sticky “Aggiungi” */}
+      <div
+        className="md:hidden fixed left-0 right-0 z-[50]"
+        style={{
+          bottom: "calc(env(safe-area-inset-bottom) + 10px)",
+        }}
+      >
+        <div className="mx-auto w-[calc(100%-24px)] max-w-[520px] rounded-[18px] border border-white/12 bg-[#0b0b0c]/55 backdrop-blur-xl px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[12px] font-semibold text-white/90">
+                Aggiungi 1–4 foto
+              </div>
+              <div className="text-[11px] text-white/50 tabular-nums">
+                {files.length}/{MAX_IMAGES} selezionate
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => galleryRef.current?.click()}
+              disabled={!canAddMore}
+              className="shrink-0 h-11 rounded-full bg-white text-black px-5 text-sm font-semibold disabled:opacity-60"
+            >
+              Aggiungi
+            </button>
+          </div>
         </div>
       </div>
     </div>

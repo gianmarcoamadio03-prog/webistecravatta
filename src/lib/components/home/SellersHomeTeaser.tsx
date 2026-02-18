@@ -356,9 +356,7 @@ export default function SellersHomeTeaser(_props: Props) {
             Sellers
           </h2>
 
-          <p className="mx-auto mt-2 max-w-xl text-sm text-white/55">
-            Animazione “loop” legata allo scroll, con micro-parallax premium.
-          </p>
+        
 
           <div className="mt-6 flex items-center justify-center gap-3">
             <Link
