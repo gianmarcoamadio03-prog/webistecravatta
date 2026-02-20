@@ -1,118 +1,89 @@
-https://ovosneaker.x.yupoo.com/categories/4913782|seller=Ovosneakers|brand=CROCS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/4705638|seller=Ovosneakers|brand=VANS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/5007585|seller=Ovosneakers|brand=LANVIN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/4997942|seller=Ovosneakers|brand=MIHARA YASUHIRO|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/4844419|seller=Ovosneakers|brand=AMIRI|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/503177?isSubCate=true|seller=Ovosneakers|brand=YEEZY|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/538418?isSubCate=true|seller=Ovosneakers|brand=ALEXANDER MCQUEEN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://yishan-ess.x.yupoo.com/categories/4937694|seller=YISHAN|brand=FOG|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://yishan-ess.x.yupoo.com/categories/4937697|seller=YISHAN|brand=FOG|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://yishan-ess.x.yupoo.com/categories/4937696|seller=YISHAN|brand=FOG|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://yishan-ess.x.yupoo.com/categories/4937691|seller=YISHAN|brand=FOG|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://yishan-ess.x.yupoo.com/categories/4937698|seller=YISHAN|brand=FOG|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://yishan-ess.x.yupoo.com/categories/4937712|seller=YISHAN|brand=FOG|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://yishan-ess.x.yupoo.com/categories/4937700|seller=YISHAN|brand=FOG|category=AUTO|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/723475?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/619035?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/611763?isSubCate=true|seller=Ovosneakers|brand=DIOR|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://steven-1989.x.yupoo.com/categories/3018541|seller=SINGOR|brand=FOG|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3011147|seller=SINGOR|brand=SUPREME|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3018569|seller=SINGOR|brand=STUSSY|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3256158|seller=SINGOR|brand=GALLERY DEPT|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3065541|seller=SINGOR|brand=REPRESENT|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3045009|seller=SINGOR|brand=RHUDE|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3149500|seller=SINGOR|brand=VINTAGE|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/4669753|seller=SINGOR|brand=HELLSTAR|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/4791468|seller=SINGOR|brand=SP5DER|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/4620574|seller=SINGOR|brand=DENIM TEARS|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3098096|seller=SINGOR|brand=DREW|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3090545|seller=SINGOR|brand=MAISON MARGIELA|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3475556|seller=SINGOR|brand=ACNE|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://steven-1989.x.yupoo.com/categories/3436723|seller=SINGOR|brand=COLE BUXTON|category=AUTO|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/742838?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/570006?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://singor.x.yupoo.com/categories/3923049|seller=SINGOR|brand=BALENCIAGA|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://singor.x.yupoo.com/categories/5115796|seller=SINGOR|brand=CARHARTT|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://singor.x.yupoo.com/categories/4610557|seller=SINGOR|brand=ASSC|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://singor.x.yupoo.com/categories/4547332|seller=SINGOR|brand=RALPH LAUREN|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://singor.x.yupoo.com/categories/4164992|seller=SINGOR|brand=GAP|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://singor.x.yupoo.com/categories/3928209|seller=SINGOR|brand=AMI|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://singor.x.yupoo.com/categories/4120026|seller=SINGOR|brand=OFF WHITE|category=AUTO|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/544125?isSubCate=true|seller=Ovosneakers|brand=NEW BALANCE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://noghost.x.yupoo.com/categories/5058913|seller=DRAGON-REP|brand=SUPREME|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://noghost.x.yupoo.com/categories/5060837|seller=DRAGON-REP|brand=CP COMPANY|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://noghost.x.yupoo.com/categories/5060836|seller=DRAGON-REP|brand=MONTBELL|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://noghost.x.yupoo.com/categories/5060839|seller=DRAGON-REP|brand=MERTRA|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://noghost.x.yupoo.com/categories/5058912|seller=DRAGON-REP|brand=NIKE|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://noghost.x.yupoo.com/categories/5058915|seller=DRAGON-REP|brand=CDG|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://noghost.x.yupoo.com/categories/5058914|seller=DRAGON-REP|brand=STUSSY|category=AUTO|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/689978?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/689979?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/783852?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/689980?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/736034?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/689982?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://jonehabjj.x.yupoo.com/categories/610978?isSubCate=true|seller=JONES MA|brand=APPLE|category=ELECTRONICS|maxPages=0|ai=1|shoeName=auto
+https://jonehabjj.x.yupoo.com/categories/610979?isSubCate=true|seller=JONES MA|brand=JBL|category=ELECTRONICS|maxPages=0|ai=1|shoeName=auto
+https://jonehabjj.x.yupoo.com/categories/610980?isSubCate=true|seller=JONES MA|brand=SAMSUNG|category=ELECTRONICS|maxPages=0|ai=1|shoeName=auto
+https://jonehabjj.x.yupoo.com/categories/610981?isSubCate=true|seller=JONES MA|brand=DYSON|category=ELECTRONICS|maxPages=0|ai=1|shoeName=auto
+https://jonehabjj.x.yupoo.com/categories/610983?isSubCate=true|seller=JONES MA|brand=BEATS|category=ELECTRONICS|maxPages=0|ai=1|shoeName=auto
+https://jonehabjj.x.yupoo.com/categories/610984?isSubCate=true|seller=JONES MA|brand=MARSHALL|category=ELECTRONICS|maxPages=0|ai=1|shoeName=auto
+https://jonehabjj.x.yupoo.com/categories/610985?isSubCate=true|seller=JONES MA|brand=GHD|category=ELECTRONICS|maxPages=0|ai=1|shoeName=auto
+https://jonehabjj.x.yupoo.com/categories/610986?isSubCate=true|seller=JONES MA|brand=BOSE|category=ELECTRONICS|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/754423?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/754424?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/718676?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/718677?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://shark-breeder.x.yupoo.com/categories/355280?isSubCate=true|seller=SHARKBREEDER|brand=BALENCIAGA|category=SNEAKERS|maxPages=0|ai=0|shoeName=0|title=BALENCIAGA 3S|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/355281?isSubCate=true|seller=SHARKBREEDER|brand=BALENCIAGA|category=SNEAKERS|maxPages=0|ai=0|shoeName=0|title=BALENCIAGA TRACK 2.0|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/355284?isSubCate=true|seller=SHARKBREEDER|brand=BALENCIAGA|category=SNEAKERS|maxPages=0|ai=0|shoeName=0|title=BALENCIAGA RUNNER 2.0|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/355298?isSubCate=true|seller=SHARKBREEDER|brand=BALENCIAGA|category=SNEAKERS|maxPages=0|ai=0|shoeName=0|title=BALENCIAGA CARGO|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/355316?isSubCate=true|seller=SHARKBREEDER|brand=BALENCIAGA|category=SNEAKERS|maxPages=0|ai=0|shoeName=0|title=BALENCIAGA 6XL|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/4453627|seller=SHARKBREEDER|brand=LANVIN|category=SNEAKERS|maxPages=0|ai=0|shoeName=0|title=LANVIN CURB|titleMode=FORCE
 
-https://ovosneaker.x.yupoo.com/categories/754422?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/736018?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/718673?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/718672?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/718674?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://shark-breeder.x.yupoo.com/categories/354195?isSubCate=true|seller=SHARKBREEDER|brand=ARC TERYX|category=JACKETS|maxPages=0|ai=0|shoeName=0|title=ARC TERYX BETA|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/354197?isSubCate=true|seller=SHARKBREEDER|brand=ARC TERYX|category=JACKETS|maxPages=0|ai=0|shoeName=0|title=ARC TERYX ALPHA|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/354199?isSubCate=true|seller=SHARKBREEDER|brand=ARC TERYX|category=JACKETS|maxPages=0|ai=0|shoeName=0|title=ARC TERYX MACAI|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/354200?isSubCate=true|seller=SHARKBREEDER|brand=ARC TERYX|category=JACKETS|maxPages=0|ai=0|shoeName=0|title=ARC TERYX ATOM|titleMode=FORCE
+https://shark-breeder.x.yupoo.com/categories/354670?isSubCate=true|seller=SHARKBREEDER|brand=ARC TERYX|category=JACKETS|maxPages=0|ai=0|shoeName=0|title=ARC TERYX GAMMA|titleMode=FORCE
 
-https://ovosneaker.x.yupoo.com/categories/692886?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/693014?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/741110?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/741111?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://yang-jersey.x.yupoo.com/categories/4730371|seller=YANG-JERSEY|brand=AUTO|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://yang-jersey.x.yupoo.com/categories/4730372|seller=YANG-JERSEY|brand=AUTO|category=AUTO|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/718661?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/718660?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/719569?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://repkingdom.x.yupoo.com/categories/4373091|seller=REPKINGDOM|brand=RALPH LAUREN|category=AUTO|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/754421?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/636196?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/670322?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/628634?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/670323?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/670325?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/700029?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/667640?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://original-copy.x.yupoo.com/categories/4653222|seller=ORIGINAL COPY|brand=MONCLER|category=PUFFERS|maxPages=0|ai=1|shoeName=auto
+https://original-copy.x.yupoo.com/categories/4680926|seller=ORIGINAL COPY|brand=CANADA GOOSE|category=PUFFERS|maxPages=0|ai=1|shoeName=auto
+https://original-copy.x.yupoo.com/categories/4653148|seller=ORIGINAL COPY|brand=LACOSTE|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://original-copy.x.yupoo.com/categories/0|seller=ORIGINAL COPY|brand=MOOSE KNUCKLES|category=PUFFERS|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/693025?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/693022?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/784932?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/464967?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/762850?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/590748?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/693023?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://tophotfashion.x.yupoo.com/categories/4644883|seller=TOPFASHION|brand=CHROME HEART|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4793671|seller=TOPFASHION|brand=OLD MONEY|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4644933|seller=TOPFASHION|brand=MONCLER|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4669816|seller=TOPFASHION|brand=CANADA GOOSE|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4643937|seller=TOPFASHION|brand=GALLERY DEPT|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4892747|seller=TOPFASHION|brand=SAINT MICHAEL|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4643939|seller=TOPFASHION|brand=HELLSTAR|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4643951|seller=TOPFASHION|brand=SP5DER|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4803996|seller=TOPFASHION|brand=AMIRI|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4699793|seller=TOPFASHION|brand=ACNE|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://tophotfashion.x.yupoo.com/categories/4639789|seller=TOPFASHION|brand=CASABLANCA|category=AUTO|maxPages=0|ai=1|shoeName=auto
 
-https://ovosneaker.x.yupoo.com/categories/738433?isSubCate=true|seller=Ovosneakers|brand=YEEZY|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/738434?isSubCate=true|seller=Ovosneakers|brand=YEEZY|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/739295?isSubCate=true|seller=Ovosneakers|brand=DIOR|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/739296?isSubCate=true|seller=Ovosneakers|brand=DIOR|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/739297?isSubCate=true|seller=Ovosneakers|brand=DIOR|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/754642?isSubCate=true|seller=Ovosneakers|brand=DIOR|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/739299?isSubCate=true|seller=Ovosneakers|brand=BAPE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/739298?isSubCate=true|seller=Ovosneakers|brand=BAPE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/739301?isSubCate=true|seller=Ovosneakers|brand=GOLDEN GOOSE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/689974?isSubCate=true|seller=Ovosneakers|brand=TIMBERLAND|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/546639?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/547138?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/557574?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/738453?isSubCate=true|seller=Ovosneakers|brand=ADIDAS|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/548086?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/548089?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/740136?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/573890?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/671119?isSubCate=true|seller=Ovosneakers|brand=JORDAN|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/557572?isSubCate=true|seller=Ovosneakers|brand=LOUIS VUITTON|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/547154?isSubCate=true|seller=Ovosneakers|brand=YEEZY|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/573901?isSubCate=true|seller=Ovosneakers|brand=NEW BALANCE|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/747875?isSubCate=true|seller=Ovosneakers|brand=NEW BALANCE|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/771224?isSubCate=true|seller=Ovosneakers|brand=MIUMIU|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/738460?isSubCate=true|seller=Ovosneakers|brand=PUMA|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/738431?isSubCate=true|seller=Ovosneakers|brand=ALEXANDER MCQUEEN|category=SNEAKERS KIDS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/686290?isSubCate=true|seller=Ovosneakers|brand=ASICS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/686291?isSubCate=true|seller=Ovosneakers|brand=ASICS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/661131?isSubCate=true|seller=Ovosneakers|brand=ASICS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/735679?isSubCate=true|seller=Ovosneakers|brand=ASICS|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/646475?isSubCate=true|seller=Ovosneakers|brand=OFF WHITE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/646476?isSubCate=true|seller=Ovosneakers|brand=OFF WHITE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/677682?isSubCate=true|seller=Ovosneakers|brand=OFF WHITE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/677684?isSubCate=true|seller=Ovosneakers|brand=OFF WHITE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/630114?isSubCate=true|seller=Ovosneakers|brand=NIKE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/631787?isSubCate=true|seller=Ovosneakers|brand=BIRKENSTOCK|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/631789?isSubCate=true|seller=Ovosneakers|brand=BIRKENSTOCK|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/734682?isSubCate=true|seller=Ovosneakers|brand=UGG|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/718669?isSubCate=true|seller=Ovosneakers|brand=BALENCIAGA|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/754841?isSubCate=true|seller=Ovosneakers|brand=BALENCIAGA|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-
-https://ovosneaker.x.yupoo.com/categories/661927?isSubCate=true|seller=Ovosneakers|brand=KOBE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
-https://ovosneaker.x.yupoo.com/categories/661928?isSubCate=true|seller=Ovosneakers|brand=KOBE|category=SNEAKERS|maxPages=0|ai=auto|shoeName=off
+https://thethunder.x.yupoo.com/categories/3972294|seller=THUNDER|brand=BALENCIAGA|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://thethunder.x.yupoo.com/categories/3972377|seller=THUNDER|brand=BURBERRY|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://thethunder.x.yupoo.com/categories/3972375|seller=THUNDER|brand=LOUIS VUITTON|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://thethunder.x.yupoo.com/categories/3973916|seller=THUNDER|brand=DIOR|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://thethunder.x.yupoo.com/categories/4257948|seller=THUNDER|brand=MONCLER|category=AUTO|maxPages=0|ai=1|shoeName=auto
+https://thethunder.x.yupoo.com/categories/4872782|seller=THUNDER|brand=ACNE|category=AUTO|maxPages=0|ai=1|shoeName=auto

@@ -4,6 +4,7 @@ import "server-only";
 import { getCnyToEurRate } from "./fx";
 import { google } from "googleapis";
 import fs from "node:fs/promises";
+import { Buffer } from "node:buffer";
 import { normalizeSlug } from "../src/lib/slug";
 
 export type SheetItem = {
@@ -282,18 +283,91 @@ function getBaseShuffleSeed() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-/** ---------- service account ---------- */
+/** ---------- service account (ROBUST) ---------- */
 
-async function readServiceAccount() {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim() || "";
-  if (!raw) throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_JSON");
+type ServiceAccount = { client_email: string; private_key: string };
 
-  // se è un path leggiamo il file, altrimenti assumiamo JSON string
-  if (raw.startsWith("/") || raw.startsWith(".")) {
-    const txt = await fs.readFile(raw, "utf8");
+function normalizePrivateKey(key: string) {
+  return String(key || "").replace(/\\n/g, "\n");
+}
+
+async function tryReadJsonFile(p: string): Promise<any | null> {
+  try {
+    const txt = await fs.readFile(p, "utf8");
     return JSON.parse(txt);
+  } catch {
+    return null;
   }
-  return JSON.parse(raw);
+}
+
+async function readServiceAccount(): Promise<ServiceAccount> {
+  // Supporta:
+  // - GOOGLE_SERVICE_ACCOUNT_JSON: JSON string | path | base64(JSON)
+  // - GOOGLE_SERVICE_ACCOUNT (alias)
+  // - GOOGLE_APPLICATION_CREDENTIALS: path
+  // - service-account.json / scraper/service-account.json
+  // - GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY (o varianti)
+  const raw =
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim() ||
+    process.env.GOOGLE_SERVICE_ACCOUNT?.trim() ||
+    "";
+
+  // A) raw come path
+  if (raw && (raw.startsWith("/") || raw.startsWith("."))) {
+    const obj = await tryReadJsonFile(raw);
+    if (obj?.client_email && obj?.private_key) return obj as ServiceAccount;
+  }
+
+  // B) raw come JSON
+  if (raw && raw.startsWith("{")) {
+    try {
+      const obj = JSON.parse(raw);
+      if (obj?.client_email && obj?.private_key) return obj as ServiceAccount;
+    } catch {}
+  }
+
+  // C) raw come base64(JSON)
+  if (raw && !raw.startsWith("{") && !raw.startsWith("/") && !raw.startsWith(".")) {
+    try {
+      const decoded = Buffer.from(raw, "base64").toString("utf8");
+      if (decoded.trim().startsWith("{")) {
+        const obj = JSON.parse(decoded);
+        if (obj?.client_email && obj?.private_key) return obj as ServiceAccount;
+      }
+    } catch {}
+  }
+
+  // D) GOOGLE_APPLICATION_CREDENTIALS path
+  const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+  if (gac) {
+    const obj = await tryReadJsonFile(gac);
+    if (obj?.client_email && obj?.private_key) return obj as ServiceAccount;
+  }
+
+  // E) file standard nel repo
+  for (const p of ["service-account.json", "scraper/service-account.json"]) {
+    const obj = await tryReadJsonFile(p);
+    if (obj?.client_email && obj?.private_key) return obj as ServiceAccount;
+  }
+
+  // F) fallback env separati
+  const client_email =
+    process.env.GOOGLE_CLIENT_EMAIL?.trim() ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() ||
+    "";
+
+  const private_key =
+    process.env.GOOGLE_PRIVATE_KEY?.trim() ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim() ||
+    "";
+
+  if (client_email && private_key) {
+    return { client_email, private_key };
+  }
+
+  throw new Error(
+    "Missing Google credentials. Provide GOOGLE_SERVICE_ACCOUNT_JSON (JSON/path/base64) OR GOOGLE_APPLICATION_CREDENTIALS OR GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY."
+  );
 }
 
 let _sheets:
@@ -304,16 +378,13 @@ async function getSheetsClient() {
   if (_sheets) return _sheets;
 
   if (!SHEET_ID) throw new Error("Missing SHEET_ID");
-  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-    throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_JSON");
-  }
 
   const sa = await readServiceAccount();
   const clientEmail = sa.client_email;
-  const privateKey = String(sa.private_key || "").replace(/\\n/g, "\n");
+  const privateKey = normalizePrivateKey(sa.private_key);
 
   if (!clientEmail || !privateKey) {
-    throw new Error("Invalid service account JSON (missing client_email/private_key)");
+    throw new Error("Invalid service account credentials (missing client_email/private_key)");
   }
 
   const auth = new google.auth.JWT({
