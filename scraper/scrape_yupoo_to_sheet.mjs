@@ -1,40 +1,5 @@
 "use strict";
 
-/**
- * scrape_yupoo_to_sheet.mjs (UPGRADED)
- *
- * ✅ Kept from your version:
- * - category pagination via NEXT arrow (block pagination)
- * - robust photo.yupoo.com normalization (fix doublehost)
- * - cover smart pick (internal header cover match -> fallback)
- * - write/update by id column A
- * - AI detect brand+category from IMG1 (img1 written in Sheet col img1)
- * - Expanded fashion taxonomy + AI category aliases normalization
- * - Robust image fetch for AI (request.get -> optional page.goto -> optional screenshot fallback)
- * - AI retries + debug logs
- * - token-saver: detect category from title first; AI category only when detectedType === OTHER (unless forced)
- * - footwear: optional AI shoe model name -> injected into TITLE (col C)
- * - Per-job TITLE MODE: AUTO / ALBUM / FORCE
- * - Per-job AI override: ai=auto|0|1
- * - Per-job shoeName override: shoeName=auto|0|1
- *
- * ✅ NEW reliability/perf:
- * 1) Checkpoint + resume (SCRAPER_CHECKPOINT_FILE, SCRAPER_RESUME=1)
- * 2) Flush to Google Sheet while working (SCRAPER_FLUSH_EVERY)
- * 3) Skip existing BEFORE opening album (SCRAPER_SKIP_EXISTING=1)
- * 4) Persistent AI cache on disk (SCRAPER_AI_CACHE_FILE)
- * 5) True album concurrency (SCRAPER_CONCURRENCY) with single-writer sheet lock
- * 6) Optional heavy AI fallbacks (SCRAPER_AI_ALLOW_PAGE_GOTO_FALLBACK / SCREENSHOT)
- * 7) Hard cap bytes for AI images (SCRAPER_AI_MAX_BYTES)
- * 8) Adaptive backoff on failures / restricted (SCRAPER_BACKOFF_*)
- *
- * ✅ NEW hardening (this patch):
- * 9) Fix queued-append duplicates: avoid UPDATE on row -1
- * 10) After successful append flush, backfill real rowNumber in byKey
- * 11) Graceful shutdown on SIGINT/SIGTERM + crash (flush + checkpoint + ai_cache)
- * 12) Extra network-down handling (internet disconnected etc.)
- */
-
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
@@ -44,23 +9,23 @@ import { fileURLToPath } from "url";
 import readline from "node:readline";
 import OpenAI from "openai";
 
-// =====================================================
-// ESM __dirname + Project root
-// =====================================================
+// =====================
+// ESM __dirname + root
+// =====================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 
-// =====================================================
-// DOTENV (robusto: sempre dal root progetto)
-// =====================================================
+// =====================
+// DOTENV
+// =====================
 dotenv.config({ path: path.join(PROJECT_ROOT, ".env.local") });
 
-// =====================================================
+// =====================
 // ENV / CONFIG
-// =====================================================
+// =====================
 const VERSION =
-  "2026-02-11 | flush+checkpoint+resume + skip-existing-preopen + disk-ai-cache + album-concurrency + single-writer + optional heavy AI fallbacks + hardcap bytes + adaptive backoff + graceful shutdown + queued-append fix";
+  "2026-02-20 | flush+checkpoint+resume + skip-existing-preopen + disk-ai-cache + concurrency + queued-append fix + 1688SHOP";
 
 const SHEET_ID = (process.env.SHEET_ID || "").trim();
 const SHEET_TAB = (process.env.SHEET_TAB || "items").trim();
@@ -68,7 +33,7 @@ const SHEET_TAB = (process.env.SHEET_TAB || "items").trim();
 const SERVICE_ACCOUNT_JSON = (process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "./service-account.json").trim();
 
 const NAV_TIMEOUT = Number(String(process.env.NAV_TIMEOUT || "90000").trim());
-const BETWEEN_ALBUMS_SLEEP = Number(String(process.env.BETWEEN_ALBUMS_SLEEP || "0").trim()); // now default 0
+const BETWEEN_ALBUMS_SLEEP = Number(String(process.env.BETWEEN_ALBUMS_SLEEP || "0").trim());
 const DEBUG_COVER = String(process.env.DEBUG_COVER || "").trim() === "1";
 
 // Concurrency
@@ -108,25 +73,22 @@ const SCRAPER_BACKOFF_MAX_MS = Math.max(
   Number(String(process.env.SCRAPER_BACKOFF_MAX_MS || "60000").trim()) || 60000
 );
 
-// UA “reale”
+// UA
 const REAL_UA =
   (process.env.USER_AGENT || "").trim() ||
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const ACCEPT_LANG = (process.env.ACCEPT_LANGUAGE || "it-IT,it;q=0.9,en;q=0.8").trim();
 
-// AI detect (img1)
+// AI detect
 const SCRAPER_DETECT_AI_RAW = String(process.env.SCRAPER_DETECT_AI || "0").trim();
 const SCRAPER_DETECT_AI = SCRAPER_DETECT_AI_RAW === "1";
-
 const SCRAPER_DETECT_MODEL = (process.env.SCRAPER_DETECT_MODEL || "gpt-4o-mini").trim();
 const SCRAPER_DETECT_IMAGE_DETAIL = (process.env.SCRAPER_DETECT_IMAGE_DETAIL || "auto").trim();
 const SCRAPER_DETECT_MAX_OUTPUT_TOKENS = Number(
   String(process.env.SCRAPER_DETECT_MAX_OUTPUT_TOKENS || "180").trim()
 );
-
 const SCRAPER_DETECT_RETRIES = Number(String(process.env.SCRAPER_DETECT_RETRIES || "2").trim());
 const SCRAPER_DETECT_DEBUG = String(process.env.SCRAPER_DETECT_DEBUG || "0").trim() === "1";
-
 const SCRAPER_OPENAI_API_KEY = String(
   process.env.SCRAPER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || ""
 ).trim();
@@ -135,15 +97,14 @@ const SCRAPER_DETECT_EFFECTIVE = SCRAPER_DETECT_AI && !!SCRAPER_OPENAI_API_KEY;
 const openai = SCRAPER_DETECT_EFFECTIVE ? new OpenAI({ apiKey: SCRAPER_OPENAI_API_KEY }) : null;
 
 // footwear model title injection (default ON)
-const SCRAPER_DETECT_SHOE_NAME =
-  String(process.env.SCRAPER_DETECT_SHOE_NAME || "1").trim() === "1";
+const SCRAPER_DETECT_SHOE_NAME = String(process.env.SCRAPER_DETECT_SHOE_NAME || "1").trim() === "1";
 
 if (!SHEET_ID) {
   console.error("❌ ERRORE: SHEET_ID mancante nel file .env.local (root progetto)");
   process.exit(1);
 }
 
-// ✅ Path credenziali relativo al ROOT progetto (non dipende dal cwd)
+// Path cred JSON relativo al ROOT progetto
 const absCredPath = path.isAbsolute(SERVICE_ACCOUNT_JSON)
   ? SERVICE_ACCOUNT_JSON
   : path.join(PROJECT_ROOT, SERVICE_ACCOUNT_JSON.replace(/^\.\//, ""));
@@ -169,7 +130,7 @@ function logAiDebug(...args) {
 }
 
 console.log("====================================");
-console.log("✅ Yupoo -> Google Sheet Scraper");
+console.log("✅ Yupoo/1688 -> Google Sheet Scraper");
 console.log("VERSION:", VERSION);
 console.log("ROOT:", PROJECT_ROOT);
 console.log("ENV:", path.join(PROJECT_ROOT, ".env.local"));
@@ -184,22 +145,11 @@ console.log("🧾 FLUSH_EVERY:", SCRAPER_FLUSH_EVERY);
 console.log("💾 CHECKPOINT:", absPathFromRoot(SCRAPER_CHECKPOINT_FILE), "| resume:", SCRAPER_RESUME ? "ON" : "OFF");
 console.log("💾 AI_CACHE:", absPathFromRoot(SCRAPER_AI_CACHE_FILE));
 console.log("🤖 AI DETECT (global):", SCRAPER_DETECT_EFFECTIVE ? `ON (${SCRAPER_DETECT_MODEL})` : "OFF");
-console.log("🤖 AI detail:", SCRAPER_DETECT_IMAGE_DETAIL);
-console.log("🤖 AI retries:", SCRAPER_DETECT_RETRIES);
-console.log("👟 AI shoe name (global):", SCRAPER_DETECT_EFFECTIVE && SCRAPER_DETECT_SHOE_NAME ? "ON" : "OFF");
-console.log("🧠 AI heavy fallbacks:", {
-  pageGoto: SCRAPER_AI_ALLOW_PAGE_GOTO_FALLBACK,
-  screenshot: SCRAPER_AI_ALLOW_SCREENSHOT_FALLBACK,
-  maxBytes: SCRAPER_AI_MAX_BYTES,
-});
-if (SCRAPER_DETECT_AI && !SCRAPER_OPENAI_API_KEY) {
-  console.log("⚠️ AI DETECT è ON ma manca SCRAPER_OPENAI_API_KEY / OPENAI_API_KEY");
-}
 console.log("====================================");
 
-// =====================================================
+// =====================
 // UTILS
-// =====================================================
+// =====================
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -264,6 +214,65 @@ function normalizeAlbumUrl(url) {
   }
 }
 
+// =====================
+// 1688 helpers
+// =====================
+function extract1688OfferId(url) {
+  const s = String(url || "");
+  let m = s.match(/\/offer\/(\d+)\.html/i);
+  if (m && m[1]) return m[1];
+  m = s.match(/m\.1688\.com\/offer\/(\d+)\.html/i);
+  if (m && m[1]) return m[1];
+  return "";
+}
+
+function is1688OfferUrl(url) {
+  try {
+    const u = new URL(String(url || ""));
+    const h = u.hostname.toLowerCase();
+    if (!h.includes("1688.com")) return false;
+    return /\/offer\/\d+\.html/i.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function canonicalize1688OfferUrl(url) {
+  const id = extract1688OfferId(url);
+  if (!id) return String(url || "");
+  return `https://detail.1688.com/offer/${id}.html`;
+}
+
+function is1688ShopOfferListUrl(url) {
+  try {
+    const u = new URL(String(url || ""));
+    const h = u.hostname.toLowerCase();
+    if (!h.includes("1688.com")) return false;
+    const p = u.pathname.toLowerCase();
+    if (!p.includes("offerlist")) return false;
+    return p.endsWith(".htm") || p.endsWith(".html");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Normalize “item url” for keys/checkpoint:
+ * - Yupoo albums -> normalizeAlbumUrl
+ * - 1688 offers -> canonicalize1688OfferUrl
+ * - else -> raw
+ */
+function normalizeItemUrl(url) {
+  const s = String(url || "").trim();
+  if (!s) return "";
+  if (isAlbumUrl(s)) return normalizeAlbumUrl(s);
+  if (is1688OfferUrl(s)) return canonicalize1688OfferUrl(s);
+  return s;
+}
+
+// =====================
+// safeGoto
+// =====================
 async function safeGoto(page, url, { retries = 3, timeout = NAV_TIMEOUT, allowRestricted = false } = {}) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -281,7 +290,14 @@ async function safeGoto(page, url, { retries = 3, timeout = NAV_TIMEOUT, allowRe
             t.includes("restricted access") ||
             t.includes("access restricted") ||
             t.includes("forbidden") ||
-            t.includes("denied")
+            t.includes("denied") ||
+            t.includes("访问受限") ||
+            t.includes("异常访问") ||
+            t.includes("安全验证") ||
+            t.includes("captcha") ||
+            t.includes("verify") ||
+            t.includes("请登录") ||
+            t.includes("登录")
           );
         })
         .catch(() => false);
@@ -293,7 +309,6 @@ async function safeGoto(page, url, { retries = 3, timeout = NAV_TIMEOUT, allowRe
       console.log(`⚠️ goto fail (${attempt}/${retries}): ${url}`);
       console.log(`   -> ${msg.split("\n")[0]}`);
 
-      // ✅ extra: rete giù / DNS / reset -> aspetta di più
       const low = msg.toLowerCase();
       const isNetDown =
         low.includes("err_internet_disconnected") ||
@@ -337,7 +352,7 @@ function normalizeForMatch(text) {
   return t;
 }
 
-// Hash leggero (stabile) per stringhe -> base36
+// Hash -> base36
 function hash36(input) {
   const s = String(input || "");
   let h = 5381;
@@ -359,22 +374,31 @@ function sellerKey(seller, anyUrl) {
 
 function buildStableId(sellerName, source_url) {
   const sid = sellerKey(sellerName, source_url);
+
   const aid = extractAlbumId(source_url);
-  const tail = aid ? aid : hash36(source_url).slice(0, 10);
+  if (aid) return `${sid}-${aid}`;
+
+  const oid = extract1688OfferId(source_url);
+  if (oid) return `${sid}-1688${oid}`;
+
+  const tail = hash36(source_url).slice(0, 10);
   return `${sid}-${tail}`;
 }
 
 function buildUniqueSlug(title, sellerName, source_url) {
   const sid = sellerKey(sellerName, source_url);
   const base = slugify(title || "item", 60) || "item";
+
   const aid = extractAlbumId(source_url);
-  const tail = aid ? aid : hash36(source_url).slice(0, 8);
+  const oid = extract1688OfferId(source_url);
+
+  const tail = aid ? aid : oid ? `1688${oid}` : hash36(source_url).slice(0, 8);
   return slugify(`${base}-${sid}-${tail}`, 95);
 }
 
-// =====================================================
-// SIMPLE ASYNC MUTEX
-// =====================================================
+// =====================
+// MUTEX
+// =====================
 function createMutex() {
   let p = Promise.resolve();
   return {
@@ -392,9 +416,9 @@ function createMutex() {
   };
 }
 
-// =====================================================
-// ADAPTIVE BACKOFF / THROTTLE
-// =====================================================
+// =====================
+// BACKOFF
+// =====================
 function createBackoff() {
   let streak = 0;
   let lastWait = 0;
@@ -405,11 +429,9 @@ function createBackoff() {
       lastWait = 0;
     },
     async onFail(kind = "fail") {
-      // kind: restricted | net | fail
       streak = Math.min(10, streak + (kind === "restricted" ? 2 : 1));
       const base = SCRAPER_BACKOFF_BASE_MS;
       const exp = Math.min(SCRAPER_BACKOFF_MAX_MS, Math.round((base || 300) * Math.pow(2, streak - 1)));
-      // add jitter
       const jitter = Math.round(exp * (0.15 + Math.random() * 0.25));
       const wait = Math.min(SCRAPER_BACKOFF_MAX_MS, exp + jitter);
       lastWait = wait;
@@ -422,13 +444,12 @@ function createBackoff() {
   };
 }
 
-// =====================================================
-// YUPOO PHOTO NORMALIZATION (doublehost fix)
-// =====================================================
+// =====================
+// YUPOO PHOTO NORMALIZATION
+// =====================
 function fixPhotoDoubleHost(u) {
   let s = String(u || "").trim();
   if (!s) return "";
-
   s = s.replace(
     /^https?:\/\/photo\.yupoo\.com\/+photo\.yupoo\.com\//i,
     "https://photo.yupoo.com/"
@@ -500,7 +521,7 @@ function dedupePreserveOrder(list) {
 
     const prev = chosen.get(key);
 
-    // ✅ Preferisci il "file vero" (es: /7679aa03.jpg) al variant /big.jpg
+    // prefer file vero (es /xxxx.jpg) vs /big.jpg
     const prevIsVar = isSizeVariant(prev);
     const nextIsVar = isSizeVariant(u);
 
@@ -509,7 +530,7 @@ function dedupePreserveOrder(list) {
       continue;
     }
 
-    // Se entrambi sono variant, tieni il BIG (migliore qualità)
+    // se entrambi variant, tieni BIG
     if (prevIsVar && nextIsVar) {
       const prevIsBig = /\/big\./i.test(prev);
       const nextIsBig = /\/big\./i.test(u);
@@ -525,9 +546,9 @@ function dedupePreserveOrder(list) {
   return out;
 }
 
-// =====================================================
-// CHECKPOINT (resume robust) - stores DONE KEYS only after successful flush
-// =====================================================
+// =====================
+// CHECKPOINT
+// =====================
 function loadCheckpoint() {
   const abs = absPathFromRoot(SCRAPER_CHECKPOINT_FILE);
   if (!SCRAPER_RESUME) return { done: {} };
@@ -552,13 +573,13 @@ function saveCheckpoint(state) {
   fs.writeFileSync(abs, JSON.stringify(out, null, 2), "utf-8");
 }
 
-function makeDoneKey(seller, albumUrl) {
-  return `${String(seller || "").trim().toLowerCase()}||${normalizeAlbumUrl(String(albumUrl || "").trim())}`;
+function makeDoneKey(seller, itemUrl) {
+  return `${String(seller || "").trim().toLowerCase()}||${normalizeItemUrl(String(itemUrl || "").trim())}`;
 }
 
-// =====================================================
-// DISK AI CACHE (persist across runs)
-// =====================================================
+// =====================
+// DISK AI CACHE
+// =====================
 function loadAiDiskCache() {
   const abs = absPathFromRoot(SCRAPER_AI_CACHE_FILE);
   if (!fs.existsSync(abs)) return { entries: {}, meta: { createdAt: new Date().toISOString() } };
@@ -580,9 +601,9 @@ function saveAiDiskCache(state) {
   fs.writeFileSync(abs, JSON.stringify(out, null, 2), "utf-8");
 }
 
-// =====================================================
-// PER-JOB MODES (titleMode / ai / shoeName)
-// =====================================================
+// =====================
+// PER-JOB MODES
+// =====================
 function normTriState(v) {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return "auto";
@@ -594,7 +615,7 @@ function normTriState(v) {
 function isAiEnabledForJob(jobAi) {
   const m = normTriState(jobAi);
   if (m === "0") return false;
-  if (m === "1") return !!openai; // deve esserci key
+  if (m === "1") return !!openai;
   return SCRAPER_DETECT_EFFECTIVE && !!openai;
 }
 
@@ -612,9 +633,9 @@ function normalizeTitleMode(mode, titleProvided = "") {
   return "AUTO";
 }
 
-// =====================================================
+// =====================
 // AI in-memory cache (seeded from disk)
-// =====================================================
+// =====================
 const _aiCache = new Map();
 let aiDisk = loadAiDiskCache();
 let aiDiskDirtyCount = 0;
@@ -639,11 +660,10 @@ function setAiCache(k, v) {
   }
 }
 
-// =====================================================
+// =====================
 // AI helpers
-// =====================================================
+// =====================
 function toAiCoverUrl(u) {
-  // prefer medium per costo
   const s = toBigYupooPhotoUrl(u);
   return s.replace(/\/big\.(jpg|jpeg|png|webp)/i, "/medium.$1");
 }
@@ -673,8 +693,8 @@ function safeJsonExtractObj(s) {
 }
 
 /**
- * ✅ Robust image fetch (improved + capped):
- * 1) context.request.get (fast) + headers realistici + referer
+ * Robust image fetch (capped):
+ * 1) context.request.get
  * 2) OPTIONAL page.goto(url) + resp.body()
  * 3) OPTIONAL screenshot jpeg fallback
  */
@@ -802,7 +822,7 @@ async function fetchImageAsDataUri(context, url, opts = {}) {
           logAiDebug("page.goto no response", { url: u });
         }
 
-        // (3) OPTIONAL screenshot fallback
+        // (3) OPTIONAL screenshot
         if (SCRAPER_AI_ALLOW_SCREENSHOT_FALLBACK) {
           try {
             const shot = await p.screenshot({ type: "jpeg", quality: 75, fullPage: true });
@@ -830,9 +850,9 @@ async function fetchImageAsDataUri(context, url, opts = {}) {
   throw lastErr || new Error("fetchImageAsDataUri failed");
 }
 
-// =====================================================
-// AUTH: storageState + PRIME photo.yupoo.com
-// =====================================================
+// =====================
+// AUTH (storageState) + prime photo.yupoo.com
+// =====================
 async function tryExtractFirstAlbumUrl(page) {
   return page
     .evaluate(() => {
@@ -889,7 +909,7 @@ async function ensureAuthStorage(browser, storagePath, primeUrl) {
 
   console.log("\n🔐 AUTH/SESSIONE richiesta (storageState non trovato).");
   console.log("   Apro un browser visibile: risolvi eventuale blocco/captcha e poi premi INVIO.");
-  console.log("   IMPORTANTISSIMO: dobbiamo settare cookie anche su photo.yupoo.com.");
+  console.log("   Se stai usando YUPOO: dobbiamo settare cookie anche su photo.yupoo.com.");
 
   const ctx = await browser.newContext({
     userAgent: REAL_UA,
@@ -964,9 +984,9 @@ async function rescueIfRestricted(context, storageAbs, primeUrl) {
   } catch {}
 }
 
-// =====================================================
+// =====================
 // Yupoo external redirect decoder
-// =====================================================
+// =====================
 function decodeYupooExternalUrl(href) {
   try {
     const u = new URL(href);
@@ -1002,9 +1022,9 @@ function decodeYupooExternalUrl(href) {
   }
 }
 
-// =====================================================
+// =====================
 // Weidian/Taobao canonicalizer + Source link picker
-// =====================================================
+// =====================
 function extractWeidianItemId(url) {
   try {
     const u = new URL(url);
@@ -1100,10 +1120,7 @@ async function resolveFinalUrl(context, url) {
 }
 
 async function pickPreferredSourceUrl(context, rawLinks) {
-  const links = dedupePreserveOrder(
-    (rawLinks || []).map((x) => String(x || "").trim()).filter(Boolean)
-  );
-
+  const links = dedupePreserveOrder((rawLinks || []).map((x) => String(x || "").trim()).filter(Boolean));
   const decoded = links.map((u) => decodeYupooExternalUrl(u)).map((u) => String(u || "").trim());
 
   for (const u of decoded) {
@@ -1115,20 +1132,25 @@ async function pickPreferredSourceUrl(context, rawLinks) {
     if (isTaobaoItemUrl(u)) return canonicalizeTaobaoItemUrl(u);
   }
 
+  for (const u of decoded) {
+    if (is1688OfferUrl(u)) return canonicalize1688OfferUrl(u);
+  }
+
   for (const u0 of decoded) {
     if (!isShortRedirectUrl(u0)) continue;
     const resolved = await resolveFinalUrl(context, u0);
     const u = decodeYupooExternalUrl(resolved || u0);
     if (isWeidianItemUrl(u)) return canonicalizeWeidianItemUrl(u);
     if (isTaobaoItemUrl(u)) return canonicalizeTaobaoItemUrl(u);
+    if (is1688OfferUrl(u)) return canonicalize1688OfferUrl(u);
   }
 
   return "";
 }
 
-// =====================================================
+// =====================
 // cover helpers
-// =====================================================
+// =====================
 function pickCoverFromCategory(coverFromCategory) {
   return toHttpsUrl(coverFromCategory);
 }
@@ -1175,9 +1197,9 @@ function pickBestInternalCoverBig(imagesBig, headerCoverRaw) {
   return { picked, key, matched, headerCover };
 }
 
-// =====================================================
-// PRODUCT TYPE / CATEGORY (Expanded Fashion Taxonomy)
-// =====================================================
+// =====================
+// PRODUCT TYPE / CATEGORY
+// =====================
 const CATEGORY_ALIASES = {
   TSHIRT: "TSHIRTS",
   T_SHIRT: "TSHIRTS",
@@ -1185,29 +1207,24 @@ const CATEGORY_ALIASES = {
   TEE: "TSHIRTS",
   TEES: "TSHIRTS",
   "T-SHIRTS": "TSHIRTS",
-
   LONG_SLEEVE: "LONGSLEEVES",
   LONG_SLEEVES: "LONGSLEEVES",
   LONGSLEEVE: "LONGSLEEVES",
   "LONG-SLEEVE": "LONGSLEEVES",
-
   HOODIE: "HOODIES",
   HOODIES: "HOODIES",
   SWEATSHIRT: "SWEATSHIRTS",
   SWEATSHIRTS: "SWEATSHIRTS",
   CREWNECK: "SWEATSHIRTS",
-
   PANT: "PANTS",
   PANTS: "PANTS",
   TROUSERS: "PANTS",
   JOGGER: "JOGGERS",
   JOGGERS: "JOGGERS",
   SWEATPANTS: "SWEATPANTS",
-
   JEAN: "JEANS",
   JEANS: "JEANS",
   DENIM: "JEANS",
-
   SNEAKER: "SNEAKERS",
   SNEAKERS: "SNEAKERS",
   SHOE: "SHOES",
@@ -1216,7 +1233,6 @@ const CATEGORY_ALIASES = {
   BOOTS: "BOOTS",
   SANDAL: "SANDALS",
   SANDALS: "SANDALS",
-
   BAG: "BAGS",
   BAGS: "BAGS",
   BACKPACK: "BACKPACKS",
@@ -1225,7 +1241,6 @@ const CATEGORY_ALIASES = {
   WALLETS: "WALLETS",
   CARDHOLDER: "CARDHOLDERS",
   CARDHOLDERS: "CARDHOLDERS",
-
   SUNGLASS: "SUNGLASSES",
   SUNGLASSES: "SUNGLASSES",
   GLASS: "SUNGLASSES",
@@ -1237,12 +1252,10 @@ const CATEGORY_ALIASES = {
   CAPS: "CAPS",
   BEANIE: "BEANIES",
   BEANIES: "BEANIES",
-
   DRESS: "DRESSES",
   DRESSES: "DRESSES",
   SKIRT: "SKIRTS",
   SKIRTS: "SKIRTS",
-
   PERFUME: "FRAGRANCES",
   PERFUMES: "FRAGRANCES",
   FRAGRANCE: "FRAGRANCES",
@@ -1261,31 +1274,20 @@ function canonicalizeCategory(raw) {
 const ALLOWED_TYPES = new Set([
   "SNEAKERS","SHOES","BOOTS","CHELSEA_BOOTS","HIKING_BOOTS","LOAFERS","DERBIES","OXFORDS",
   "HEELS","FLATS","MULES","CLOGS","ESPADRILLES","SANDALS","SLIDES",
-
   "JACKETS","BOMBERS","WINDBREAKERS","RAIN_JACKETS","PUFFERS","PARKAS","COATS","TRENCH_COATS",
   "LEATHER_JACKETS","DENIM_JACKETS","BLAZERS","VESTS",
-
   "TSHIRTS","LONGSLEEVES","SHIRTS","BLOUSES","POLOS","TANK_TOPS","CROP_TOPS","BODYSUITS",
-
   "HOODIES","SWEATSHIRTS","SWEATERS","CARDIGANS","KNITWEAR",
-
   "PANTS","SWEATPANTS","JOGGERS","JEANS","SHORTS","SKIRTS","LEGGINGS",
-
   "DRESSES","JUMPSUITS","ROMPERS","SUITS","TRACKSUITS","SETS",
-
   "UNDERWEAR","UNDERPANTS","BOXERS","BRIEFS","TRUNKS","LINGERIE","BRA","SOCKS","HOSIERY","SWIMWEAR",
-
   "BAGS","TOTE_BAGS","SHOULDER_BAGS","CROSSBODY","BACKPACKS","DUFFLE_BAGS","LUGGAGE",
   "WALLETS","CARDHOLDERS",
-
   "HATS","CAPS","BEANIES","SCARVES","GLOVES","BELTS","TIES","KEYCHAINS",
   "SUNGLASSES","OPTICAL_FRAMES",
   "WATCHES","JEWELRY","RINGS","BRACELETS","NECKLACES","EARRINGS",
-
   "FRAGRANCES","SKINCARE","HAIR","MAKEUP",
-
   "PHONE_CASES","AIRPODS_CASES","TECH_ACCESSORIES",
-
   "KIDS","PETS","HOME","DECOR","OTHER",
 ]);
 
@@ -1336,109 +1338,36 @@ function maybePrefixBrand(title, brandHint) {
   return `${b.toUpperCase()} ${t}`.trim();
 }
 
-async function aiDetectFootwearNameFromCover(context, coverUrl, brandHint, titleRaw, bodyText, refererUrl = "", opts = {}) {
-  const aiEnabled = !!opts.aiEnabled;
-  const shoeEnabled = !!opts.shoeNameEnabled;
-
-  if (!aiEnabled || !openai) return "";
-  if (!shoeEnabled) return "";
-
-  const cover = String(coverUrl || "").trim();
-  if (!cover) return "";
-
-  const cacheKey = `shoeName::${yupooImageKey(cover) || cover}`;
-  if (_aiCache.has(cacheKey)) return _aiCache.get(cacheKey) || "";
-
-  const prompt = `
-Return ONLY valid JSON: {"name":"", "confidence":0}
-
-GOAL:
-- Detect the shoe model / collaboration from the IMAGE when possible.
-- Keep it concise (max ~60 chars). No sizes, no price.
-
-RULES:
-- If NOT sure, return {"name":"", "confidence":0}
-- confidence MUST be a number 0..1
-- Avoid repeating the brand if it's the same as BRAND_HINT.
-
-BRAND_HINT: ${String(brandHint || "").slice(0, 80)}
-TITLE_HINT: ${String(titleRaw || "").slice(0, 180)}
-BODY_HINT: ${String(bodyText || "").slice(0, 240)}
-`.trim();
-
-  try {
-    const dataUri = await fetchImageAsDataUri(context, cover, { referer: refererUrl });
-
-    const resp = await openai.responses.create({
-      model: SCRAPER_DETECT_MODEL,
-      input: [
-        {
-          role: "user",
-          content: [
-            { type: "input_text", text: prompt },
-            { type: "input_image", image_url: dataUri, detail: SCRAPER_DETECT_IMAGE_DETAIL },
-          ],
-        },
-      ],
-      max_output_tokens: Math.min(140, SCRAPER_DETECT_MAX_OUTPUT_TOKENS),
-    });
-
-    const outText = resp.output_text || "";
-    const obj = safeJsonExtractObj(outText) || {};
-
-    const name = String(obj.name || "").trim();
-    const conf = Number(obj.confidence);
-
-    const ok = name && Number.isFinite(conf) && conf >= 0.6;
-
-    const finalName = ok ? name : "";
-    setAiCache(cacheKey, finalName);
-    return finalName;
-  } catch (e) {
-    setAiCache(cacheKey, "");
-    logAiDebug("shoeName detect failed", String(e?.message || e));
-    return "";
-  }
-}
-
 function detectProductTypeFromTitle(titleRaw) {
   const t = normalizeForMatch(titleRaw);
 
   const rules = [
     { type: "FRAGRANCES", re: /\bperfume\b|\bparfum\b|\bfragrance\b|\bcologne\b|\beau de\b|\bprofumo\b/ },
-
     { type: "HOODIES", re: /\bhoodie(s)?\b|\bhooded\b|\bfelpa con cappuccio\b|\bfelpa hoodie\b|\b卫衣\b/ },
     { type: "SWEATSHIRTS", re: /\bsweatshirt(s)?\b|\bcrewneck\b|\bgirocollo\b|\bfelpa\b/ },
     { type: "SWEATPANTS", re: /\bsweatpants\b|\bpantaloni tuta\b|\bjogger pants\b/ },
     { type: "JOGGERS", re: /\bjoggers?\b|\bpantaloni jogger\b/ },
-
     { type: "TSHIRTS", re: /\bt\s*-\s*shirt\b|\bt\s*shirt\b|\btshirt\b|\btee\b|\bmaglietta\b|\btee\s*shirt\b|\b短袖\b/ },
     { type: "LONGSLEEVES", re: /\blong\s*sleeve\b|\b长袖\b/ },
     { type: "SHIRTS", re: /\bshirt(s)?\b|\bbutton\s*up\b|\bcamicia\b/ },
     { type: "POLOS", re: /\bpolo(s)?\b/ },
-
     { type: "JEANS", re: /\bjeans\b|\bdenim\b|\bjean\b|\b牛仔\b/ },
     { type: "SHORTS", re: /\bshort(s)?\b|\bbermuda\b/ },
     { type: "PANTS", re: /\btrousers?\b|\bpants\b|\bpantaloni\b|\b裤\b/ },
-
     { type: "JACKETS", re: /\bjacket(s)?\b|\bgiacca\b|\b外套\b/ },
     { type: "PUFFERS", re: /\bpuffer\b|\bdown\s*jacket\b|\bpiumino\b/ },
     { type: "COATS", re: /\bcoat(s)?\b|\bcappotto\b/ },
-
     { type: "SLIDES", re: /\bslides?\b|\bciabatt(e|a)\b/ },
     { type: "SANDALS", re: /\bsandals?\b|\bflip\s*flops?\b/ },
     { type: "SNEAKERS", re: /\bsneakers?\b|\btrainers?\b|\bscarpe da ginnastica\b|\b运动鞋\b/ },
     { type: "BOOTS", re: /\bboots?\b|\bstivali\b/ },
     { type: "SHOES", re: /\bshoes?\b|\bscarpe\b|\b皮鞋\b/ },
-
     { type: "BAGS", re: /\bbag(s)?\b|\bborsa\b|\b包\b/ },
     { type: "WALLETS", re: /\bwallet(s)?\b|\bportafoglio\b/ },
     { type: "BELTS", re: /\bbelt(s)?\b|\bcintura\b/ },
-
     { type: "HATS", re: /\bhat(s)?\b|\bcappello\b/ },
     { type: "CAPS", re: /\bcap(s)?\b|\bbaseball\s*cap\b/ },
     { type: "BEANIES", re: /\bbeanie(s)?\b|\bberretto\b/ },
-
     { type: "SUNGLASSES", re: /\bsunglass(es)?\b|\bshades\b|\bocchiali da sole\b/ },
     { type: "WATCHES", re: /\bwatch(es)?\b|\borologio\b/ },
   ];
@@ -1465,9 +1394,9 @@ function buildDisplayName(titleRaw, brandOverride = "", forcedType = "") {
   return tr || "Item";
 }
 
-// =====================================================
-// UNIQUE NAME (colonna C) per seller
-// =====================================================
+// =====================
+// UNIQUE name (col C) per seller
+// =====================
 function splitBaseAndIndex(name) {
   const n = String(name || "").trim();
   if (!n) return { base: "", idx: 0 };
@@ -1519,9 +1448,9 @@ function makeUniqueSlug(slugBase, fallbackId, existingSlugs) {
   return `${s}-${n}`;
 }
 
-// =====================================================
+// =====================
 // Price
-// =====================================================
+// =====================
 function parseCnyFromText(text) {
   const t = String(text ?? "");
   if (!t.trim()) return null;
@@ -1548,9 +1477,9 @@ function parseCnyFromText(text) {
   return candidates.length ? candidates[0] : null;
 }
 
-// =====================================================
+// =====================
 // GOOGLE SHEETS
-// =====================================================
+// =====================
 function getSheetsClient() {
   const credentials = JSON.parse(fs.readFileSync(absCredPath, "utf-8"));
   const auth = new google.auth.GoogleAuth({
@@ -1604,8 +1533,8 @@ async function loadExistingIndex(sheets) {
       nameCounters.set(k, Math.max(prev, idx));
     }
 
-    const yupooUrl = String(row[16] || "").trim();
-    const key = yupooUrl ? `${seller}||${normalizeAlbumUrl(yupooUrl)}` : "";
+    const sourceUrl = String(row[16] || "").trim(); // col Q
+    const key = sourceUrl ? `${seller}||${normalizeItemUrl(sourceUrl)}` : "";
     if (key) byKey.set(key, { rowNumber, rowValues: row });
   }
 
@@ -1690,9 +1619,9 @@ async function batchUpdateRows(sheets, updates, batchSize = 50) {
   }
 }
 
-// =====================================================
-// DETECT TOTAL PAGES (supports Page10of10)
-// =====================================================
+// =====================
+// YUPOO: detect total pages + next arrow
+// =====================
 async function detectCategoryTotalPages(page) {
   return page.evaluate(() => {
     const nums = [];
@@ -1761,9 +1690,6 @@ async function detectCategoryTotalPages(page) {
   });
 }
 
-// =====================================================
-// NEXT PAGE (arrow) for block pagination
-// =====================================================
 async function getNextPageNumberFromDom(page) {
   return page.evaluate(() => {
     const pickNextAnchor = () => {
@@ -1821,9 +1747,9 @@ async function getNextPageNumberFromDom(page) {
   });
 }
 
-// =====================================================
-// SCRAPE: CATEGORY (auto pages via NEXT)
-// =====================================================
+// =====================
+// SCRAPE: CATEGORY (YUPOO)
+// =====================
 async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsForRescue = "", primeUrlForRescue = "") {
   const page = await context.newPage();
   const albumUrls = new Set();
@@ -2002,7 +1928,9 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
     const detEnd = await detectCategoryTotalPages(page).catch(() => 1);
     pagesDetected = Math.max(pagesDetected, detEnd, pagesVisited);
 
-    console.log(`\n📌 CATEGORY DONE | pagesVisited=${pagesVisited} | pagesDetected(best)=${pagesDetected}${stoppedEarly ? " | STOP-EARLY" : ""}`);
+    console.log(
+      `\n📌 CATEGORY DONE | pagesVisited=${pagesVisited} | pagesDetected(best)=${pagesDetected}${stoppedEarly ? " | STOP-EARLY" : ""}`
+    );
   } finally {
     await page.close();
   }
@@ -2016,9 +1944,260 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
   };
 }
 
-// =====================================================
-// SCRAPE: ALBUM (REUSABLE PAGE)
-// =====================================================
+// =====================
+// 1688SHOP: list scraping
+// =====================
+function toHttpsMaybe(u) {
+  let s = String(u || "").trim();
+  if (!s) return "";
+  if (s.startsWith("//")) s = `https:${s}`;
+  return s;
+}
+
+function toBigAlicdnUrl(u) {
+  let s = toHttpsMaybe(u);
+  if (!s) return "";
+  s = s.replace(/_(\d+)x(\d+)\.(jpg|jpeg|png|webp)(\?.*)?$/i, ".$3$4");
+  return s;
+}
+
+function extractImageUrlsFromHtml(html) {
+  const h = String(html || "");
+  if (!h) return [];
+  const out = [];
+  const re = /https?:\/\/[^"'\\\s>]+?\.(?:jpg|jpeg|png|webp)(?:\?[^"'\\\s>]*)?/gi;
+  let m;
+  while ((m = re.exec(h)) !== null) {
+    const u = String(m[0] || "").trim();
+    if (!u) continue;
+    if (!u.includes("alicdn.com") && !u.includes("1688img") && !u.includes("aliimg")) continue;
+    out.push(u);
+    if (out.length >= 120) break;
+  }
+  return out;
+}
+
+function parseCnyFrom1688Html(html) {
+  const h = String(html || "");
+  if (!h) return null;
+
+  const patterns = [
+    /"price"\s*:\s*"(\d+(?:\.\d+)?)"/i,
+    /"discountPrice"\s*:\s*"(\d+(?:\.\d+)?)"/i,
+    /"offerPrice"\s*:\s*"(\d+(?:\.\d+)?)"/i,
+    /"price"\s*:\s*"(\d+(?:\.\d+)?)[\s-]+(\d+(?:\.\d+)?)"/i,
+  ];
+
+  for (const re of patterns) {
+    const m = h.match(re);
+    if (m && m[1]) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > 0 && n < 100000) return n;
+    }
+  }
+  return null;
+}
+
+async function detect1688TotalPages(page) {
+  return page
+    .evaluate(() => {
+      const nums = [];
+      const add = (x) => {
+        const n = parseInt(String(x || ""), 10);
+        if (Number.isFinite(n) && n > 0) nums.push(n);
+      };
+
+      document.querySelectorAll('a[href*="pageNum="]').forEach((a) => {
+        const href = (a.getAttribute("href") || "").trim();
+        const m = href.match(/pageNum\s*=\s*(\d+)/i);
+        if (m && m[1]) add(m[1]);
+        const t = (a.textContent || "").trim();
+        if (t) add(t);
+      });
+
+      const txt = (document.body?.innerText || "").replace(/\s+/g, " ").trim();
+      const m1 = txt.match(/共\s*(\d+)\s*页/i);
+      if (m1 && m1[1]) add(m1[1]);
+
+      const m2 = txt.match(/(\d+)\s*\/\s*(\d+)/);
+      if (m2 && m2[2]) add(m2[2]);
+
+      return nums.length ? Math.max(...nums) : 1;
+    })
+    .catch(() => 1);
+}
+
+async function getNext1688PageNumberFromDom(page) {
+  return page
+    .evaluate(() => {
+      const anchors = Array.from(document.querySelectorAll("a[href]"));
+
+      const looksNext = (a) => {
+        const t = (a.textContent || "").trim().toLowerCase();
+        const cls = (a.getAttribute("class") || "").toLowerCase();
+        return t.includes("下一页") || t.includes("next") || cls.includes("next");
+      };
+
+      for (const a of anchors) {
+        if (!looksNext(a)) continue;
+        const href = (a.getAttribute("href") || "").trim();
+        if (!href) continue;
+        const m = href.match(/pageNum\s*=\s*(\d+)/i);
+        if (m && m[1]) return parseInt(m[1], 10) || 0;
+      }
+
+      let max = 0;
+      for (const a of anchors) {
+        const href = (a.getAttribute("href") || "").trim();
+        const m = href.match(/pageNum\s*=\s*(\d+)/i);
+        if (m && m[1]) {
+          const n = parseInt(m[1], 10);
+          if (Number.isFinite(n)) max = Math.max(max, n);
+        }
+      }
+      return max || 0;
+    })
+    .catch(() => 0);
+}
+
+async function scrape1688ShopOfferList(context, listUrl, maxPagesCap = 0) {
+  const page = await context.newPage();
+  const offerUrls = new Set();
+  const coverByOffer = new Map();
+
+  let pagesVisited = 0;
+  let pagesDetected = 1;
+  let stoppedEarly = false;
+
+  const cap = Number(maxPagesCap || 0) > 0 ? Math.floor(Number(maxPagesCap)) : 0;
+
+  async function collectOffersOnPage() {
+    const items = await page
+      .evaluate(() => {
+        const attrs = ["data-src", "data-lazy", "data-original", "data-lazy-src", "src"];
+
+        const pickImg = (a) => {
+          const img = a.querySelector("img") || null;
+          if (!img) return "";
+          for (const k of attrs) {
+            const v = (img.getAttribute(k) || "").trim();
+            if (!v) continue;
+            if (v.startsWith("data:") || v === "about:blank") continue;
+            return v;
+          }
+          return "";
+        };
+
+        const out = [];
+        const anchors = Array.from(document.querySelectorAll('a[href*="/offer/"], a[href*="detail.1688.com/offer"]'));
+        for (const a of anchors) {
+          const href = (a.getAttribute("href") || "").trim();
+          if (!href) continue;
+          let hrefAbs = "";
+          try { hrefAbs = new URL(href, location.href).toString(); } catch {}
+          if (!hrefAbs) continue;
+
+          const imgRaw = pickImg(a);
+          let imgAbs = "";
+          if (imgRaw) {
+            try { imgAbs = new URL(imgRaw, location.href).toString(); } catch {}
+          }
+
+          out.push({ hrefAbs, imgAbs });
+        }
+        return out;
+      })
+      .catch(() => []);
+
+    const before = offerUrls.size;
+
+    for (const it of items) {
+      const hrefAbs = String(it?.hrefAbs || "").trim();
+      if (!hrefAbs) continue;
+      if (!/\/offer\/\d+\.html/i.test(hrefAbs)) continue;
+
+      const canon = canonicalize1688OfferUrl(hrefAbs);
+      offerUrls.add(canon);
+
+      const imgAbs = toBigAlicdnUrl(toHttpsMaybe(it?.imgAbs || ""));
+      if (imgAbs && !coverByOffer.has(canon)) coverByOffer.set(canon, imgAbs);
+    }
+
+    return { found: items.length, newCount: offerUrls.size - before };
+  }
+
+  try {
+    const u1 = new URL(listUrl);
+    if (!u1.searchParams.get("pageNum")) u1.searchParams.set("pageNum", "1");
+
+    console.log(`\n📄 1688SHOP list page 1: ${u1.toString()}`);
+    await safeGoto(page, u1.toString(), { retries: 2, timeout: NAV_TIMEOUT, allowRestricted: false });
+    await page.waitForTimeout(450);
+
+    pagesDetected = await detect1688TotalPages(page);
+    console.log(`📚 1688 pagesDetected(best-effort): ${pagesDetected}${cap ? ` | cap maxPages=${cap}` : ""}`);
+
+    pagesVisited = 1;
+
+    const c1 = await collectOffersOnPage();
+    console.log(`📦 Offer trovate finora: ${offerUrls.size} (found=${c1.found}, new=${c1.newCount})`);
+
+    let safety = 0;
+    let current = 1;
+
+    while (true) {
+      if (cap && current >= cap) break;
+
+      const nextPage = await getNext1688PageNumberFromDom(page);
+      if (!nextPage || nextPage <= current) break;
+
+      const u = new URL(listUrl);
+      u.searchParams.set("pageNum", String(nextPage));
+
+      console.log(`\n📄 1688SHOP list page ${nextPage}: ${u.toString()}`);
+      await safeGoto(page, u.toString(), { retries: 2, timeout: NAV_TIMEOUT, allowRestricted: false });
+      await page.waitForTimeout(380);
+
+      current = nextPage;
+      pagesVisited = current;
+
+      const c = await collectOffersOnPage();
+      console.log(`📦 Offer trovate finora: ${offerUrls.size} (found=${c.found}, new=${c.newCount})`);
+
+      if (c.found === 0) {
+        stoppedEarly = true;
+        console.log(`🛑 STOP: nessun offer trovato a pageNum=${current}`);
+        break;
+      }
+
+      safety++;
+      if (safety > 300) {
+        stoppedEarly = true;
+        console.log("🛑 STOP: safety limit (300 pagine) raggiunto.");
+        break;
+      }
+    }
+
+    pagesDetected = Math.max(pagesDetected, pagesVisited);
+    console.log(
+      `\n📌 1688SHOP DONE | pagesVisited=${pagesVisited} | pagesDetected(best)=${pagesDetected}${stoppedEarly ? " | STOP-EARLY" : ""}`
+    );
+  } finally {
+    await page.close();
+  }
+
+  return {
+    albumUrls: Array.from(offerUrls),
+    coverByAlbum: coverByOffer,
+    pagesDetected,
+    pagesVisited,
+    stoppedEarly,
+  };
+}
+
+// =====================
+// ALBUM helpers (YUPOO)
+// =====================
 async function getAlbumTitle(page) {
   await page
     .waitForFunction(
@@ -2088,7 +2267,9 @@ function buildOrderedImages(images, img1Pick, coverUrl) {
   return reorderImagesCoverFirst(images, coverUrl);
 }
 
-// ✅ AI detect brand+category da img1 (per-job aware)
+// =====================
+// AI: brand+category from cover
+// =====================
 async function aiDetectBrandCategoryFromCover(context, coverUrl, titleRaw, bodyText, refererUrl = "", opts = {}) {
   const aiEnabled = !!opts.aiEnabled;
   if (!aiEnabled || !openai) return { brand: "", category: "OTHER" };
@@ -2161,6 +2342,269 @@ BODY: ${String(bodyText || "").slice(0, 500)}
   return result;
 }
 
+// =====================
+// AI: footwear model name
+// =====================
+async function aiDetectFootwearNameFromCover(context, coverUrl, brandHint, titleRaw, bodyText, refererUrl = "", opts = {}) {
+  const aiEnabled = !!opts.aiEnabled;
+  const shoeEnabled = !!opts.shoeNameEnabled;
+
+  if (!aiEnabled || !openai) return "";
+  if (!shoeEnabled) return "";
+
+  const cover = String(coverUrl || "").trim();
+  if (!cover) return "";
+
+  const cacheKey = `shoeName::${yupooImageKey(cover) || cover}`;
+  if (_aiCache.has(cacheKey)) return _aiCache.get(cacheKey) || "";
+
+  const prompt = `
+Return ONLY valid JSON: {"name":"", "confidence":0}
+
+GOAL:
+- Detect the shoe model / collaboration from the IMAGE when possible.
+- Keep it concise (max ~60 chars). No sizes, no price.
+
+RULES:
+- If NOT sure, return {"name":"", "confidence":0}
+- confidence MUST be a number 0..1
+- Avoid repeating the brand if it's the same as BRAND_HINT.
+
+BRAND_HINT: ${String(brandHint || "").slice(0, 80)}
+TITLE_HINT: ${String(titleRaw || "").slice(0, 180)}
+BODY_HINT: ${String(bodyText || "").slice(0, 240)}
+`.trim();
+
+  try {
+    const dataUri = await fetchImageAsDataUri(context, cover, { referer: refererUrl });
+
+    const resp = await openai.responses.create({
+      model: SCRAPER_DETECT_MODEL,
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            { type: "input_image", image_url: dataUri, detail: SCRAPER_DETECT_IMAGE_DETAIL },
+          ],
+        },
+      ],
+      max_output_tokens: Math.min(140, SCRAPER_DETECT_MAX_OUTPUT_TOKENS),
+    });
+
+    const outText = resp.output_text || "";
+    const obj = safeJsonExtractObj(outText) || {};
+
+    const name = String(obj.name || "").trim();
+    const conf = Number(obj.confidence);
+
+    const ok = name && Number.isFinite(conf) && conf >= 0.6;
+
+    const finalName = ok ? name : "";
+    setAiCache(cacheKey, finalName);
+    return finalName;
+  } catch (e) {
+    setAiCache(cacheKey, "");
+    logAiDebug("shoeName detect failed", String(e?.message || e));
+    return "";
+  }
+}
+
+// =====================
+// 1688 OFFER: scrape single offer -> row
+// =====================
+async function scrape1688OfferOnPage(
+  page,
+  context,
+  offerUrl,
+  categoryOverride,
+  seller,
+  brand,
+  img1Pick,
+  coverUrlFromList,
+  jobOptions = {}
+) {
+  const normUrl = canonicalize1688OfferUrl(offerUrl);
+
+  const titleForced = String(jobOptions.title || "").trim();
+  const titleMode = normalizeTitleMode(jobOptions.titleMode, titleForced);
+
+  const aiEnabled = isAiEnabledForJob(jobOptions.ai);
+  const shoeNameEnabled = isShoeNameEnabledForJob(jobOptions.shoeName, aiEnabled);
+
+  await safeGoto(page, normUrl, { retries: 2, timeout: NAV_TIMEOUT, allowRestricted: false });
+  await page.waitForTimeout(550);
+
+  const bodyText = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+  const html = await page.content().catch(() => "");
+
+  const titleRaw = await page
+    .evaluate(() => {
+      const og = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
+      if (og) return og.trim();
+      const h1 = document.querySelector("h1")?.textContent || "";
+      if (h1) return h1.trim();
+      const t = document.title || "";
+      return t.trim();
+    })
+    .catch(() => "");
+
+  const domImages = await page
+    .evaluate(() => {
+      const attrs = ["data-src", "data-lazy", "data-original", "data-lazy-src", "src"];
+      const out = [];
+      const add = (raw) => {
+        const r = String(raw || "").trim();
+        if (!r) return;
+        if (r.startsWith("data:") || r === "about:blank") return;
+        let u = r;
+        if (u.startsWith("//")) u = `https:${u}`;
+        out.push(u);
+      };
+
+      document.querySelectorAll("img").forEach((img) => {
+        for (const k of attrs) add(img.getAttribute(k) || "");
+      });
+
+      document.querySelectorAll('[style*="background-image"]').forEach((el) => {
+        const style = (el.getAttribute("style") || "").trim();
+        const m = style.match(/background-image\s*:\s*url\(["']?([^"')]+)["']?\)/i);
+        if (m && m[1]) add(m[1]);
+      });
+
+      return out;
+    })
+    .catch(() => []);
+
+  const htmlImages = extractImageUrlsFromHtml(html);
+
+  let images = dedupePreserveOrder(
+    [...domImages, ...htmlImages]
+      .map(toHttpsMaybe)
+      .map(toBigAlicdnUrl)
+      .filter(Boolean)
+      .filter((u) => u.includes("alicdn.com") || u.includes("aliimg") || u.includes("1688"))
+  );
+
+  const coverSmart = toBigAlicdnUrl(toHttpsMaybe(coverUrlFromList)) || images[0] || "";
+  if (coverSmart && !images.includes(coverSmart)) images = [coverSmart, ...images];
+
+  const orderedImages = dedupePreserveOrder(buildOrderedImages(images, img1Pick, coverSmart));
+  const img1Final = orderedImages[0] || "";
+
+  const brandRaw = String(brand || "").trim();
+  const catRaw = String(categoryOverride || "").trim();
+
+  const wantsAutoBrand = !brandRaw || brandRaw.toUpperCase() === "AUTO";
+  const wantsAutoCat = !catRaw || catRaw.toUpperCase() === "AUTO";
+
+  const detectedType = detectProductTypeFromTitle(titleRaw);
+  const shouldAiBrand = wantsAutoBrand;
+  const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
+
+  let aiBrand = "";
+  let aiCat = "";
+
+  if (aiEnabled && (shouldAiBrand || shouldAiCat) && img1Final) {
+    try {
+      const ai = await aiDetectBrandCategoryFromCover(context, img1Final, titleRaw, bodyText, normUrl, { aiEnabled });
+      aiBrand = ai.brand || "";
+      aiCat = ai.category || "";
+    } catch {}
+  }
+
+  let finalCategory;
+  if (!wantsAutoCat && catRaw) {
+    const forced = canonicalizeCategory(catRaw);
+    finalCategory = ALLOWED_TYPES.has(forced) ? forced : "OTHER";
+  } else {
+    const autoCat = (shouldAiCat ? canonicalizeCategory(aiCat) : "") || detectedType || "OTHER";
+    finalCategory = ALLOWED_TYPES.has(autoCat) ? autoCat : "OTHER";
+  }
+
+  const finalBrand =
+    !wantsAutoBrand && brandRaw
+      ? brandRaw
+      : shouldAiBrand
+        ? (aiBrand || "")
+        : "";
+
+  let titleBase = "";
+  if (titleMode === "FORCE") {
+    const brandHint = (String(finalBrand || "").trim() || String(brandRaw || "").trim()).trim();
+    titleBase = maybePrefixBrand(titleForced, brandHint);
+    if (!titleBase) titleBase = buildDisplayName(titleRaw, finalBrand, finalCategory);
+  } else if (titleMode === "ALBUM") {
+    titleBase = String(titleRaw || "").trim();
+    if (!titleBase) titleBase = buildDisplayName(titleRaw, finalBrand, finalCategory);
+  } else {
+    if (FOOTWEAR_TYPES.has(finalCategory)) {
+      const brandHint = (String(finalBrand || "").trim() || String(brandRaw || "").trim()).trim();
+      const shoeNameRaw = await aiDetectFootwearNameFromCover(
+        context,
+        img1Final,
+        brandHint,
+        titleRaw,
+        bodyText,
+        normUrl,
+        { aiEnabled, shoeNameEnabled }
+      );
+      const shoeName = removeRedundantBrandPrefix(shoeNameRaw, brandHint);
+
+      if (shoeName) {
+        const hasBrandAlready =
+          normalizeBrandForCompare(shoeName).includes(normalizeBrandForCompare(brandHint));
+        titleBase = (hasBrandAlready || !brandHint) ? shoeName.trim() : `${brandHint.toUpperCase()} ${shoeName}`.trim();
+      } else {
+        titleBase = buildDisplayName(titleRaw, finalBrand, finalCategory);
+      }
+    } else {
+      titleBase = buildDisplayName(titleRaw, finalBrand, finalCategory);
+    }
+  }
+
+  let priceCny = parseCnyFrom1688Html(html);
+  if (!priceCny) priceCny = parseCnyFromText(titleRaw);
+  if (!priceCny) priceCny = parseCnyFromText(bodyText);
+
+  const sellerName = seller || "";
+  const source_url = normUrl;
+
+  const id = buildStableId(sellerName, source_url);
+  const slug = buildUniqueSlug(titleBase || titleRaw || "item", sellerName, source_url);
+
+  const img1to8 = orderedImages.slice(0, 8);
+  const extra = orderedImages.slice(8);
+
+  const row = [
+    id,
+    slug,
+    titleBase,
+    String(finalBrand || "").trim(),
+    finalCategory || "OTHER",
+    sellerName,
+    img1to8[0] || "",
+    img1to8[1] || "",
+    img1to8[2] || "",
+    img1to8[3] || "",
+    img1to8[4] || "",
+    img1to8[5] || "",
+    img1to8[6] || "",
+    img1to8[7] || "",
+    extra.length ? extra.join(", ") : "",
+    "ok",
+    source_url, // Q
+    "",         // R
+    priceCny ? String(priceCny) : "",
+    "",
+  ];
+
+  return row;
+}
+
+// =====================
+// SCRAPE: ALBUM / OFFER (single reusable page)
+// =====================
 async function scrapeAlbumOnPage(
   page,
   context,
@@ -2174,7 +2618,6 @@ async function scrapeAlbumOnPage(
   primeUrlForRescue = "",
   jobOptions = {}
 ) {
-  // per-job overrides
   const titleForced = String(jobOptions.title || "").trim();
   const titleMode = normalizeTitleMode(jobOptions.titleMode, titleForced);
 
@@ -2223,16 +2666,31 @@ async function scrapeAlbumOnPage(
     });
   }
 
-  const normAlbumUrl = normalizeAlbumUrl(albumUrl);
+  const normUrl = normalizeItemUrl(albumUrl);
+
+  // 1688 offer support
+  if (is1688OfferUrl(normUrl)) {
+    return await scrape1688OfferOnPage(
+      page,
+      context,
+      normUrl,
+      categoryOverride,
+      seller,
+      brand,
+      img1Pick,
+      coverUrlFromCategory, // for 1688: cover from list best-effort
+      jobOptions
+    );
+  }
 
   try {
     try {
-      await safeGoto(page, normAlbumUrl, { retries: 2, timeout: NAV_TIMEOUT });
+      await safeGoto(page, normUrl, { retries: 2, timeout: NAV_TIMEOUT });
     } catch (e) {
       const msg = String(e?.message || e);
       if (msg.toLowerCase().includes("restricted") && storageAbsForRescue) {
-        await rescueIfRestricted(context, storageAbsForRescue, primeUrlForRescue || normAlbumUrl);
-        await safeGoto(page, normAlbumUrl, { retries: 1, timeout: NAV_TIMEOUT });
+        await rescueIfRestricted(context, storageAbsForRescue, primeUrlForRescue || normUrl);
+        await safeGoto(page, normUrl, { retries: 1, timeout: NAV_TIMEOUT });
       } else throw e;
     }
 
@@ -2263,7 +2721,6 @@ async function scrapeAlbumOnPage(
     const bodyText = await page.evaluate(() => document.body.innerText || "");
     const titleRaw = await getAlbumTitle(page);
 
-    // cover smart
     const internal = pickBestInternalCoverBig(imagesBig, headerCoverRaw);
     const coverSmart =
       internal.picked ||
@@ -2272,42 +2729,29 @@ async function scrapeAlbumOnPage(
 
     if (DEBUG_COVER && Number(img1Pick || 0) <= 0) {
       console.log(
-        `🖼️ COVER DEBUG | album=${extractAlbumId(normAlbumUrl)} | header=${internal.headerCover || "-"} | key=${internal.key || "-"} | matched=${internal.matched ? "YES" : "NO"} | picked=${coverSmart || "-"}`
+        `🖼️ COVER DEBUG | album=${extractAlbumId(normUrl)} | matched=${internal.matched ? "YES" : "NO"} | picked=${coverSmart || "-"}`
       );
     }
 
-    // ✅ assicuro che coverSmart sia IN imagesBig
     if (coverSmart) {
       const cKey = yupooImageKey(coverSmart);
-      const hasCover = imagesBig.some((u) => {
-        if (u === coverSmart) return true;
-        if (cKey && yupooImageKey(u) === cKey) return true;
-        return false;
-      });
-
+      const hasCover = imagesBig.some((u) => (u === coverSmart) || (cKey && yupooImageKey(u) === cKey));
       if (!hasCover) {
-        imagesBig = [coverSmart, ...imagesBig];
-        imagesBig = dedupePreserveOrder(imagesBig);
+        imagesBig = dedupePreserveOrder([coverSmart, ...imagesBig]);
       }
     }
 
-    // ✅ ordine finale + img1Final
     const orderedImages = dedupePreserveOrder(buildOrderedImages(imagesBig, img1Pick, coverSmart));
     const img1Final = orderedImages[0] || "";
 
-    // ✅ AUTO logic
     const brandRaw = String(brand || "").trim();
     const catRaw = String(categoryOverride || "").trim();
 
     const wantsAutoBrand = !brandRaw || brandRaw.toUpperCase() === "AUTO";
     const wantsAutoCat = !catRaw || catRaw.toUpperCase() === "AUTO";
 
-    // ✅ 1) Prima detection gratis da titolo
     const detectedType = detectProductTypeFromTitle(titleRaw);
 
-    // ✅ 2) AI SOLO se serve davvero:
-    // - brand è AUTO
-    // - categoria è AUTO e detectedType === OTHER
     const shouldAiBrand = wantsAutoBrand;
     const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
 
@@ -2316,25 +2760,12 @@ async function scrapeAlbumOnPage(
 
     if (aiEnabled && (shouldAiBrand || shouldAiCat)) {
       try {
-        const ai = await aiDetectBrandCategoryFromCover(
-          context,
-          img1Final,
-          titleRaw,
-          bodyText,
-          normAlbumUrl,
-          { aiEnabled }
-        );
+        const ai = await aiDetectBrandCategoryFromCover(context, img1Final, titleRaw, bodyText, normUrl, { aiEnabled });
         aiBrand = ai.brand || "";
         aiCat = ai.category || "";
-        logAiDebug("AI result", { album: extractAlbumId(normAlbumUrl), img1: img1Final, aiBrand, aiCat, detectedType });
-      } catch (e) {
-        logAiDebug("AI detect crashed", String(e?.message || e));
-      }
-    } else {
-      logAiDebug("AI skipped", { album: extractAlbumId(normAlbumUrl), detectedType, wantsAutoBrand, wantsAutoCat, aiEnabled });
+      } catch {}
     }
 
-    // 🔒 finalCategory
     let finalCategory;
     if (!wantsAutoCat && catRaw) {
       const forced = canonicalizeCategory(catRaw);
@@ -2344,15 +2775,14 @@ async function scrapeAlbumOnPage(
       finalCategory = ALLOWED_TYPES.has(autoCat) ? autoCat : "OTHER";
     }
 
-    // ✅ finalBrand
     const finalBrand =
       !wantsAutoBrand && brandRaw
         ? brandRaw
-        : (shouldAiBrand ? (aiBrand || "") : "");
+        : shouldAiBrand
+          ? (aiBrand || "")
+          : "";
 
-    // ✅ TITLE
     let titleBase = "";
-
     if (titleMode === "FORCE") {
       const brandHint = (String(finalBrand || "").trim() || String(brandRaw || "").trim()).trim();
       titleBase = maybePrefixBrand(titleForced, brandHint);
@@ -2370,19 +2800,16 @@ async function scrapeAlbumOnPage(
           brandHint,
           titleRaw,
           bodyText,
-          normAlbumUrl,
+          normUrl,
           { aiEnabled, shoeNameEnabled }
         );
 
         const shoeName = removeRedundantBrandPrefix(shoeNameRaw, brandHint);
 
         if (shoeName) {
-          const maybePrefixed = shoeName;
           const hasBrandAlready =
-            normalizeBrandForCompare(maybePrefixed).includes(normalizeBrandForCompare(brandHint));
-          titleBase = (hasBrandAlready || !brandHint)
-            ? maybePrefixed.trim()
-            : `${brandHint.toUpperCase()} ${maybePrefixed}`.trim();
+            normalizeBrandForCompare(shoeName).includes(normalizeBrandForCompare(brandHint));
+          titleBase = (hasBrandAlready || !brandHint) ? shoeName.trim() : `${brandHint.toUpperCase()} ${shoeName}`.trim();
         } else {
           titleBase = buildDisplayName(titleRaw, finalBrand, finalCategory);
         }
@@ -2391,7 +2818,7 @@ async function scrapeAlbumOnPage(
       }
     }
 
-    // ✅ SOURCE LINK
+    // SOURCE LINK
     const rawLinks = await page
       .evaluate(() => {
         return Array.from(document.querySelectorAll("a[href]"))
@@ -2415,12 +2842,13 @@ async function scrapeAlbumOnPage(
     }
 
     cleanedSource = canonicalizeWeidianItemUrl(cleanedSource);
+    cleanedSource = canonicalize1688OfferUrl(cleanedSource);
 
     let priceCny = parseCnyFromText(titleRaw);
     if (!priceCny) priceCny = parseCnyFromText(bodyText);
 
     const sellerName = seller || "";
-    const source_url = normAlbumUrl;
+    const source_url = normUrl;
 
     const id = buildStableId(sellerName, source_url);
     const slug = buildUniqueSlug(titleBase || titleRaw || "item", sellerName, source_url);
@@ -2428,30 +2856,38 @@ async function scrapeAlbumOnPage(
     const img1to8 = orderedImages.slice(0, 8);
     const extra = orderedImages.slice(8);
 
-    const brandCell = String(finalBrand || "").trim();
-    const tags = "";
-
     const row = [
-      id, slug, titleBase, brandCell, finalCategory || "OTHER", sellerName,
-      img1to8[0] || "", img1to8[1] || "", img1to8[2] || "", img1to8[3] || "",
-      img1to8[4] || "", img1to8[5] || "", img1to8[6] || "", img1to8[7] || "",
+      id,
+      slug,
+      titleBase,
+      String(finalBrand || "").trim(),
+      finalCategory || "OTHER",
+      sellerName,
+      img1to8[0] || "",
+      img1to8[1] || "",
+      img1to8[2] || "",
+      img1to8[3] || "",
+      img1to8[4] || "",
+      img1to8[5] || "",
+      img1to8[6] || "",
+      img1to8[7] || "",
       extra.length ? extra.join(", ") : "",
       "ok",
-      normAlbumUrl,
-      cleanedSource || "",
+      normUrl,               // Q: source_url
+      cleanedSource || "",   // R: source (weidian/taobao/1688 external)
       priceCny ? String(priceCny) : "",
-      tags,
+      "",
     ];
 
     return row;
   } finally {
-    // IMPORTANT: do not close page here (pool reuse)
+    // page reused by worker pool
   }
 }
 
-// =====================================================
-// JOBS FILE PARSER + CLI PARSER
-// =====================================================
+// =====================
+// JOBS PARSER + CLI
+// =====================
 function parseJobLine(line) {
   const raw = String(line || "").trim();
   if (!raw) return null;
@@ -2468,7 +2904,6 @@ function parseJobLine(line) {
     maxPages: 0,
     category: "",
     img1: 0,
-
     title: "",
     titleMode: "",
     ai: "auto",
@@ -2530,7 +2965,6 @@ function parseArgs(argv) {
     file: "",
     auth: false,
     storage: "",
-
     title: "",
     titleMode: "",
     ai: "auto",
@@ -2551,7 +2985,6 @@ function parseArgs(argv) {
     else if (a === "--headful") args.headful = true;
     else if (a === "--auth") args.auth = true;
     else if (a === "--storage") args.storage = String(list[++i] || "");
-
     else if (a === "--title") args.title = String(list[++i] || "");
     else if (a === "--titleMode") args.titleMode = String(list[++i] || "");
     else if (a === "--ai") args.ai = String(list[++i] || "auto");
@@ -2565,9 +2998,9 @@ function parseArgs(argv) {
   return args;
 }
 
-// =====================================================
+// =====================
 // MAIN
-// =====================================================
+// =====================
 async function main() {
   const args = parseArgs(process.argv);
   const jobs = args.file ? loadJobsFromFile(args.file) : null;
@@ -2577,16 +3010,10 @@ async function main() {
     console.log(`node ./scraper/scrape_yupoo_to_sheet.mjs "<url>" --brand "X" --seller "Y"`);
     console.log(`node ./scraper/scrape_yupoo_to_sheet.mjs --file ./scraper/yupoo_jobs.txt`);
     console.log(`node ./scraper/scrape_yupoo_to_sheet.mjs --auth --storage ./scraper/yupoo_state.json`);
-    console.log("\nNEW:");
-    console.log(`  --title "VOMERO" --titleMode FORCE|ALBUM|AUTO --ai auto|0|1 --shoeName auto|0|1`);
     process.exit(0);
   }
 
-  const storagePath =
-    args.storage ||
-    process.env.YUPOO_STORAGE_STATE ||
-    "./scraper/yupoo_state.json";
-
+  const storagePath = args.storage || process.env.YUPOO_STORAGE_STATE || "./scraper/yupoo_state.json";
   const storageAbs = absPathFromRoot(storagePath);
   const jobPrimeUrl = (jobs?.[0]?.url || args.url || "https://www.yupoo.com/").trim();
   const headless = !args.headful;
@@ -2612,22 +3039,16 @@ async function main() {
     skippedCheckpoint: 0,
   };
 
-  // Single-writer buffers + locks
   const sheetLock = createMutex();
   const indexLock = createMutex();
   const backoff = createBackoff();
 
-  // ✅ pending buffers now include key
   let pendingAppends = []; // { key, row, doneKey }
   let pendingUpdates = []; // { key, range, values, doneKey }
-
-  // ✅ to update queued-append rows without rowNumber
-  const pendingByKey = new Map(); // key -> { kind:"append"|"update", itemRef }
-
+  const pendingByKey = new Map(); // key -> { kind, itemRef }
   let flushScheduled = false;
 
   async function flushToSheet(force = false) {
-    // serialize flush calls
     return sheetLock.runExclusive(async () => {
       if (!force) {
         const total = pendingAppends.length + pendingUpdates.length;
@@ -2645,7 +3066,11 @@ async function main() {
 
       try {
         if (upd.length) {
-          await batchUpdateRows(sheets, upd.map((x) => ({ range: x.range, values: x.values })), 50);
+          await batchUpdateRows(
+            sheets,
+            upd.map((x) => ({ range: x.range, values: x.values })),
+            50
+          );
         }
 
         if (app.length) {
@@ -2654,7 +3079,6 @@ async function main() {
 
           nextAppendRow = await writeRowsInBatches_ByExplicitRow(sheets, rows, startRow, 50);
 
-          // ✅ now that rowNumbers are known, backfill in byKey
           await indexLock.runExclusive(async () => {
             for (let i = 0; i < app.length; i++) {
               const it = app[i];
@@ -2665,20 +3089,17 @@ async function main() {
           });
         }
 
-        // commit checkpoint only after successful sheet write
         if (doneKeys.length) {
           for (const k of doneKeys) checkpoint.done[k] = 1;
           saveCheckpoint(checkpoint);
         }
 
-        // ✅ clear pendingByKey for processed items (prevents growth + stale refs)
         for (const it of upd) if (it?.key) pendingByKey.delete(it.key);
         for (const it of app) if (it?.key) pendingByKey.delete(it.key);
 
         console.log(`✅ FLUSH OK | updates=${upd.length} appends=${app.length} | nextAppendRow=${nextAppendRow}`);
         backoff.onOk();
       } catch (e) {
-        // put back buffers (best effort) to retry later
         for (const x of upd) pendingUpdates.push(x);
         for (const x of app) pendingAppends.push(x);
 
@@ -2692,10 +3113,8 @@ async function main() {
   async function maybeScheduleFlush() {
     const total = pendingAppends.length + pendingUpdates.length;
     if (total < SCRAPER_FLUSH_EVERY) return;
-
     if (flushScheduled) return;
     flushScheduled = true;
-
     try {
       await flushToSheet(false);
     } finally {
@@ -2703,7 +3122,6 @@ async function main() {
     }
   }
 
-  // ✅ Graceful shutdown (CTRL+C, kill, crash)
   let shuttingDown = false;
   async function gracefulExit(reason) {
     if (shuttingDown) return;
@@ -2742,14 +3160,12 @@ async function main() {
 
     context.setDefaultNavigationTimeout(NAV_TIMEOUT);
 
-    // 🚫 blocco risorse pesanti: MA consenti immagini se sono NAVIGATION
+    // Block heavy assets, but allow navigation images
     context.route("**/*", (route) => {
       try {
         const req = route.request();
         const t = req.resourceType();
-
         if (t === "image" && req.isNavigationRequest()) return route.continue();
-
         if (t === "font" || t === "media" || t === "image") return route.abort();
         return route.continue();
       } catch {
@@ -2772,7 +3188,6 @@ async function main() {
             maxPages: Number(args.maxPages || 0) || 0,
             category: args.category,
             img1: Number(args.img1 || 0) || 0,
-
             title: args.title,
             titleMode: args.titleMode,
             ai: args.ai,
@@ -2784,14 +3199,19 @@ async function main() {
     if (args.file) console.log(`📄 File jobs: ${args.file}`);
     console.log("🔐 storageState:", storageAbs);
 
-    // MAIN JOB LOOP (jobs sequential, albums concurrent)
     for (let j = 0; j < jobList.length; j++) {
       global.jobs += 1;
 
       const job = jobList[j];
       const url = String(job.url || "").trim();
 
-      const mode = isCategoryUrl(url) ? "CATEGORY" : isAlbumUrl(url) ? "ALBUM" : "UNKNOWN";
+      const mode =
+        isCategoryUrl(url) ? "CATEGORY_YUPOO" :
+        isAlbumUrl(url) ? "ALBUM_YUPOO" :
+        is1688ShopOfferListUrl(url) ? "CATEGORY_1688" :
+        is1688OfferUrl(url) ? "ALBUM_1688" :
+        "UNKNOWN";
+
       if (mode === "UNKNOWN") {
         console.log(`\n⚠️ Job ${j + 1}/${jobList.length} URL non valido, skip: ${url}`);
         continue;
@@ -2810,9 +3230,6 @@ async function main() {
         shoeName: normTriState(job.shoeName),
       };
 
-      const effAi = isAiEnabledForJob(jobOpts.ai);
-      const effShoe = isShoeNameEnabledForJob(jobOpts.shoeName, effAi);
-
       if (!seller) {
         console.log("❌ ERRORE: seller mancante. Passa --seller o seller= nel jobs file.");
         continue;
@@ -2827,36 +3244,28 @@ async function main() {
       console.log("📌 Category override:", categoryOverride || "(AUTO/empty)");
       console.log("📄 maxPages:", maxPages ? `${maxPages} (CAP)` : "AUTO (tutte)");
       console.log("🖼️ img1:", img1Pick > 0 ? `MANUAL #${img1Pick}` : "AUTO (cover smart)");
-      console.log("🧾 titleMode:", jobOpts.titleMode);
-      console.log("🧾 title:", jobOpts.title ? `"${jobOpts.title}"` : "(none)");
-      console.log("🤖 ai(job):", jobOpts.ai, "=>", effAi ? "ON" : "OFF");
-      console.log("👟 shoeName(job):", jobOpts.shoeName, "=>", effShoe ? "ON" : "OFF");
       console.log("------------------------------------");
 
       let albumUrls = [];
       let coverByAlbum = new Map();
 
-      if (mode === "CATEGORY") {
+      if (mode === "CATEGORY_YUPOO") {
         const res = await scrapeCategory(context, url, maxPages, storageAbs, url);
-        albumUrls = res.albumUrls;
+        albumUrls = Array.from(new Set(res.albumUrls.map(normalizeItemUrl)));
         coverByAlbum = res.coverByAlbum;
-
-        albumUrls = Array.from(new Set(albumUrls.map(normalizeAlbumUrl)));
-        console.log(`\n🧾 Totale prodotti estratti: ${albumUrls.length}`);
-        console.log(`🖼️  Cover categoria mappate (best effort): ${coverByAlbum.size}`);
+      } else if (mode === "CATEGORY_1688") {
+        const res = await scrape1688ShopOfferList(context, url, maxPages);
+        albumUrls = Array.from(new Set(res.albumUrls.map(normalizeItemUrl)));
+        coverByAlbum = res.coverByAlbum;
       } else {
-        albumUrls = [normalizeAlbumUrl(url)];
-        console.log(`\n🧾 Totale prodotti estratti: 1`);
+        albumUrls = [normalizeItemUrl(url)];
       }
 
       global.albumsExtracted += albumUrls.length;
 
-      // -------- album concurrency pool --------
+      // pages pool
       const pages = [];
-      for (let k = 0; k < SCRAPER_CONCURRENCY; k++) {
-        const p = await context.newPage();
-        pages.push(p);
-      }
+      for (let k = 0; k < SCRAPER_CONCURRENCY; k++) pages.push(await context.newPage());
 
       let nextIndex = 0;
 
@@ -2866,16 +3275,14 @@ async function main() {
           const idx = nextIndex++;
           if (idx >= albumUrls.length) break;
 
-          const normUrl = normalizeAlbumUrl(albumUrls[idx]);
+          const normUrl = normalizeItemUrl(albumUrls[idx]);
           const doneKey = makeDoneKey(seller, normUrl);
 
-          // resume checkpoint skip
           if (SCRAPER_RESUME && checkpoint.done && checkpoint.done[doneKey]) {
             global.skippedCheckpoint += 1;
             continue;
           }
 
-          // pre-open skip existing
           const sellerLower = String(seller).trim().toLowerCase();
           const key = `${sellerLower}||${normUrl}`;
           if (SCRAPER_SKIP_EXISTING && byKey.has(key)) {
@@ -2905,22 +3312,20 @@ async function main() {
           } catch (err) {
             global.albumsFail += 1;
             const msg = String(err?.message || err);
-            console.log(`❌ FAIL album: ${normUrl}`);
+            console.log(`❌ FAIL item: ${normUrl}`);
             console.log(`   -> ${msg.split("\n")[0]}`);
             if (msg.toLowerCase().includes("restricted")) await backoff.onFail("restricted");
             else await backoff.onFail("fail");
             continue;
           }
 
-          // Decide update/append + enforce unique slug/title safely (critical section)
           await indexLock.runExclusive(async () => {
-            const yupooUrl = String(row[16] || "").trim();
-            const dk = makeDoneKey(seller, yupooUrl || normUrl);
+            const sourceUrl = String(row[16] || "").trim();
+            const dk = makeDoneKey(seller, sourceUrl || normUrl);
 
             const existing = byKey.get(key);
 
             if (existing && existing.rowNumber >= 2) {
-              // ✅ UPDATE reale su sheet
               const prev = padToLen(existing.rowValues, 20);
               const idPrev = String(prev[0] || "").trim();
               const slugPrev = String(prev[1] || "").trim();
@@ -2937,30 +3342,22 @@ async function main() {
 
               byKey.set(key, { rowNumber: existing.rowNumber, rowValues: next });
               global.sheetUpdate += 1;
-
-              console.log(`🔁 UPDATE riga ${existing.rowNumber}: ${next[1]} | "${next[2]}"`);
             } else if (existing && existing.rowNumber < 2) {
-              // ✅ ESISTE ma non ancora scritto: è un APPEND in coda → aggiorno la riga in coda
               const entry = pendingByKey.get(key);
-
               if (entry?.kind === "append" && entry.itemRef?.row) {
                 const prevQueued = padToLen(entry.itemRef.row, 20);
                 const next = padToLen(row, 20);
 
-                // keep stable id/slug e titolo già “unique”
                 next[0] = prevQueued[0];
                 next[1] = prevQueued[1];
                 if (String(prevQueued[2] || "").trim()) next[2] = prevQueued[2];
 
                 entry.itemRef.row = next;
                 byKey.set(key, { rowNumber: -1, rowValues: next });
-
-                console.log(`🧷 UPDATE(queued append): ${next[1]} | "${next[2]}" | CAT="${next[4]}" | BRAND="${next[3]}"`);
               } else {
-                console.log(`⚠️ Duplicate album in same run but queued entry not found. Skip: ${key}`);
+                console.log(`⚠️ Duplicate item in same run but queued entry not found. Skip: ${key}`);
               }
             } else {
-              // ✅ APPEND nuovo
               const next = padToLen(row, 20);
 
               const rawSlug = String(next[1] || "").trim();
@@ -2976,9 +3373,7 @@ async function main() {
               pendingByKey.set(key, { kind: "append", itemRef: appItem });
 
               byKey.set(key, { rowNumber: -1, rowValues: next });
-
               global.sheetAppend += 1;
-              console.log(`✅ APPEND(queued): ${next[1]} | "${next[2]}" | CAT="${next[4]}" | BRAND="${next[3]}"`);
             }
           });
 
@@ -2987,39 +3382,32 @@ async function main() {
         }
       }
 
-      // run workers
       const workers = [];
       for (let w = 0; w < pages.length; w++) workers.push(worker(w));
       await Promise.all(workers);
 
-      // close pages
       for (const p of pages) {
         try { await p.close(); } catch {}
       }
 
-      // Force flush at end of job
       await flushToSheet(true);
 
       console.log("\n================ JOB DONE ================");
       console.log(`Seller: ${seller}`);
       console.log(`URL   : ${url}`);
-      console.log(`Album totali: ${albumUrls.length}`);
+      console.log(`Item totali: ${albumUrls.length}`);
       console.log("=========================================\n");
     }
 
-    // final flush
     await flushToSheet(true);
 
-    // final save AI cache
-    try {
-      saveAiDiskCache(aiDisk);
-    } catch {}
+    try { saveAiDiskCache(aiDisk); } catch {}
 
     console.log("\n✅ FINITO!");
     console.log("\n================ GLOBAL SUMMARY ================");
     console.log(`Jobs totali             : ${global.jobs}`);
-    console.log(`Album estratti          : ${global.albumsExtracted}`);
-    console.log(`Album processati        : ok=${global.albumsOk} | fail=${global.albumsFail}`);
+    console.log(`Item estratti           : ${global.albumsExtracted}`);
+    console.log(`Item processati         : ok=${global.albumsOk} | fail=${global.albumsFail}`);
     console.log(`Sheet                   : append=${global.sheetAppend} | update=${global.sheetUpdate}`);
     console.log(`Skip existing(pre-open) : ${global.skippedExisting}`);
     console.log(`Skip checkpoint(resume) : ${global.skippedCheckpoint}`);

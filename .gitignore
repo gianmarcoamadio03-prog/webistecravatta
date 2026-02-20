@@ -20,3 +20,7 @@ scraper/ai_cache.json
 scraper/checkpoint.json
 .vercel
 .env*.local
+
+.env.local
+service-account.json
+scraper/service-account.json

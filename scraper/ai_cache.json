@@ -169639,7 +169639,7 @@
   },
   "meta": {
     "createdAt": "2026-02-12T02:35:10.421Z",
-    "updatedAt": "2026-02-19T15:48:05.199Z",
-    "version": "2026-02-11 | flush+checkpoint+resume + skip-existing-preopen + disk-ai-cache + album-concurrency + single-writer + optional heavy AI fallbacks + hardcap bytes + adaptive backoff + graceful shutdown + queued-append fix"
+    "updatedAt": "2026-02-20T09:54:28.063Z",
+    "version": "2026-02-20 | flush+checkpoint+resume + skip-existing-preopen + disk-ai-cache + concurrency + queued-append fix + 1688SHOP"
   }
 }
