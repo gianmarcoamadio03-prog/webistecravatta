@@ -6,9 +6,10 @@ import { google } from "googleapis";
 import fs from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import { normalizeSlug } from "../src/lib/slug";
+import { unstable_cache } from "next/cache";
 
 export type SheetItem = {
-  rowNumber: number; // ✅ AGGIUNTO (posizione nel foglio)
+  rowNumber: number; // ✅ posizione nel foglio
 
   id: string;
   slug: string;
@@ -69,12 +70,62 @@ function normalizeHttp(u: string) {
   const s = String(u || "").trim();
   if (!s) return "";
   if (s.startsWith("//")) return `https:${s}`;
-  // a volte Yupoo dà /photo.yupoo.com/...
   if (s.startsWith("/photo.yupoo.com/")) return `https://${s.slice(1)}`;
   return s;
 }
 
-/** --------- Yupoo image helpers (per dedupe smart) --------- */
+/** ---------- Next persistent cache helpers ---------- */
+
+function stableStringify(obj: any): string {
+  if (obj === null || obj === undefined) return String(obj);
+  const t = typeof obj;
+  if (t !== "object") return JSON.stringify(obj);
+  if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(",")}]`;
+  const keys = Object.keys(obj).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+}
+
+function hash36(input: string) {
+  let h = 5381;
+  for (let i = 0; i < input.length; i++) h = ((h << 5) + h) ^ input.charCodeAt(i);
+  return (h >>> 0).toString(36);
+}
+
+async function withBackoff<T>(fn: () => Promise<T>, _label: string, tries = 3): Promise<T> {
+  let lastErr: any;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      lastErr = e;
+      const status = e?.code || e?.status;
+      const msg = String(e?.message || "").toLowerCase();
+      const retriable =
+        status === 429 ||
+        status === 500 ||
+        status === 503 ||
+        msg.includes("resource has been exhausted") ||
+        msg.includes("quota");
+
+      if (!retriable || i === tries - 1) break;
+
+      const wait = 500 * Math.pow(2, i) + Math.floor(Math.random() * 250);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
+}
+
+const CACHE_PREFIX = `sheet:${SHEET_ID || "noid"}:${TAB || "items"}`;
+
+// FX rate cache (evita richieste ripetute)
+const getCnyToEurRateCached = unstable_cache(
+  async () => getCnyToEurRate(),
+  [`${CACHE_PREFIX}:fx:cnyeur:v1`],
+  { revalidate: 60 * 60 } // 1 ora
+);
+
+/** --------- Yupoo image helpers (dedupe smart) --------- */
 
 function yupooImageKey(url: string) {
   try {
@@ -82,7 +133,6 @@ function yupooImageKey(url: string) {
     const host = (u.hostname || "").toLowerCase();
     if (!host.includes("photo.yupoo.com")) return "";
     const parts = u.pathname.split("/").filter(Boolean);
-    // tipico: /SELLER/HASH/...
     if (parts.length >= 2) return `${parts[0]}/${parts[1]}`;
     return "";
   } catch {
@@ -97,7 +147,6 @@ function toBigYupooPhotoUrl(url: string) {
   const fixed = normalizeHttp(s0);
   if (!fixed.toLowerCase().includes("photo.yupoo.com")) return fixed;
 
-  // converte /medium.jpg /small.jpg /thumb.jpg /square.jpg -> /big.jpg
   return fixed.replace(
     /\/(medium|small|thumb|square)\.(jpg|jpeg|png|webp)(\?.*)?$/i,
     (_m, _sz, ext, qs) => `/big.${ext}${qs || ""}`
@@ -111,16 +160,13 @@ function scoreImageUrl(u: string) {
   let sc = 0;
   const low = s.toLowerCase();
 
-  // preferisci big
   if (low.includes("/big.")) sc += 4;
 
-  // preferisci query (spesso auth_key)
   try {
     const uu = new URL(normalizeHttp(s));
     if ((uu.search || "").length > 0) sc += 2;
   } catch {}
 
-  // leggero tie-breaker
   sc += Math.min(2, Math.floor(s.length / 120));
   return sc;
 }
@@ -301,12 +347,6 @@ async function tryReadJsonFile(p: string): Promise<any | null> {
 }
 
 async function readServiceAccount(): Promise<ServiceAccount> {
-  // Supporta:
-  // - GOOGLE_SERVICE_ACCOUNT_JSON: JSON string | path | base64(JSON)
-  // - GOOGLE_SERVICE_ACCOUNT (alias)
-  // - GOOGLE_APPLICATION_CREDENTIALS: path
-  // - service-account.json / scraper/service-account.json
-  // - GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY (o varianti)
   const raw =
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim() ||
     process.env.GOOGLE_SERVICE_ACCOUNT?.trim() ||
@@ -425,139 +465,6 @@ type MetaRow = {
   seller: string;
 };
 
-/** ---------- cache (pruned) ---------- */
-
-function pruneMap<K, V>(m: Map<K, V>, max = 250) {
-  if (m.size <= max) return;
-  const extra = m.size - max;
-  const it = m.keys();
-  for (let i = 0; i < extra; i++) {
-    const k = it.next().value as K | undefined;
-    if (k === undefined) break;
-    m.delete(k);
-  }
-}
-
-let countCache: { ts: number; n: number } | null = null;
-const pageCache = new Map<string, { ts: number; data: PageResult }>();
-const headCache = new Map<string, { ts: number; items: SheetItem[] }>();
-const spreadsheetCache = new Map<
-  string,
-  { ts: number; data: PageResult & { facets: Facets; order: "default" | "random" } }
->();
-
-let metaCache: { ts: number; rows: MetaRow[]; facets: Facets } | null = null;
-const shuffledRowCache = new Map<string, { ts: number; rowNumbers: number[] }>();
-
-/** ---------- meta + facets ---------- */
-
-async function getMeta(): Promise<{ rows: MetaRow[]; facets: Facets }> {
-  const ttl = TTL_MS();
-  const now = Date.now();
-  if (metaCache && now - metaCache.ts < ttl) {
-    return { rows: metaCache.rows, facets: metaCache.facets };
-  }
-
-  const { sheets, spreadsheetId, tab } = await getSheetsClient();
-
-  // Meta super-leggera: A..F (id, slug, title, brand, category, seller)
-  const range = `${tab}!A2:F`;
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-  const values = (resp.data.values || []) as any[][];
-
-  const rows: MetaRow[] = [];
-  const brands: string[] = [];
-  const categories: string[] = [];
-  const sellers: string[] = [];
-
-  values.forEach((r, i) => {
-    const rowNumber = 2 + i;
-    const row = Array.isArray(r) ? r.map((c) => String(c ?? "")) : [];
-    while (row.length < 6) row.push("");
-
-    const id = String(row[0] ?? "").trim();
-    const slug = String(row[1] ?? "").trim();
-    const title = String(row[2] ?? "").trim();
-    const brand = String(row[3] ?? "").trim();
-    const category = String(row[4] ?? "").trim();
-    const seller = String(row[5] ?? "").trim();
-
-    if (!title) return;
-
-    rows.push({ rowNumber, id, slug, title, brand, category, seller });
-    if (brand) brands.push(brand);
-    if (category) categories.push(category);
-    if (seller) sellers.push(seller);
-  });
-
-  const facets: Facets = {
-    brands: uniqueSorted(brands),
-    categories: uniqueSorted(categories),
-    sellers: uniqueSorted(sellers),
-  };
-
-  metaCache = { ts: now, rows, facets };
-  return { rows, facets };
-}
-
-function filterRowNumbers(
-  metaRows: MetaRow[],
-  opts: { q?: string; brand?: string; category?: string; seller?: string }
-): number[] {
-  const q = normLite(opts.q || "");
-  const brand = String(opts.brand || "").trim();
-  const category = String(opts.category || "").trim();
-  const seller = String(opts.seller || "").trim();
-
-  const hasBrand = brand && brand !== "all";
-  const hasCategory = category && category !== "all";
-  const hasSeller = seller && seller !== "all";
-
-  return metaRows
-    .filter((r) => {
-      if (hasBrand && r.brand !== brand) return false;
-      if (hasCategory && r.category !== category) return false;
-      if (hasSeller && r.seller !== seller) return false;
-
-      if (q) {
-        const hay = normLite(`${r.title} ${r.brand} ${r.seller} ${r.category}`);
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    })
-    .map((r) => r.rowNumber);
-}
-
-async function getShuffledRowNumbers(cacheKey: string, rowNumbers: number[]) {
-  const ttl = TTL_MS();
-  const now = Date.now();
-  const cached = shuffledRowCache.get(cacheKey);
-  if (cached && now - cached.ts < ttl) return cached.rowNumbers;
-
-  const seed = seedFromString(cacheKey);
-  const shuffled = shuffleInPlace([...rowNumbers], seed);
-  shuffledRowCache.set(cacheKey, { ts: now, rowNumbers: shuffled });
-  pruneMap(shuffledRowCache, 250);
-  return shuffled;
-}
-
-async function getItemsCount(): Promise<number> {
-  const ttl = TTL_MS();
-  const now = Date.now();
-
-  if (countCache && now - countCache.ts < ttl) return countCache.n;
-
-  const { sheets, spreadsheetId, tab } = await getSheetsClient();
-
-  const range = `${tab}!C2:C`;
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-  const values = (resp.data.values || []) as any[][];
-  const n = values.filter((r) => String(r?.[0] ?? "").trim() !== "").length;
-
-  countCache = { ts: now, n };
-  return n;
-}
-
 /**
  * Parser “fixed columns” (A..T):
  * A id
@@ -604,7 +511,6 @@ function parseRowFixed(row: string[], rowNumber: number, cnyToEur: number): Shee
   const scannedImages = scanRowForImageUrls(row);
   const imagesRaw = uniqueKeepOrderImages([...headerImages, ...scannedImages]);
 
-  // ✅ COVER = prima immagine
   const cover = imagesRaw[0] || "";
   const images = cover ? [cover, ...imagesRaw.slice(1)] : imagesRaw;
 
@@ -616,7 +522,7 @@ function parseRowFixed(row: string[], rowNumber: number, cnyToEur: number): Shee
   const tags = uniqueKeepOrder(parseTags(tagsRaw));
 
   return {
-    rowNumber, // ✅ AGGIUNTO QUI
+    rowNumber,
     id,
     slug,
     title: title || "Item",
@@ -632,18 +538,117 @@ function parseRowFixed(row: string[], rowNumber: number, cnyToEur: number): Shee
   };
 }
 
-async function fetchItemsByRowNumbers(rowNumbers: number[]): Promise<SheetItem[]> {
+/** ---------- META (cached persistent) ---------- */
+
+async function _getMetaUncached(): Promise<{ rows: MetaRow[]; facets: Facets }> {
+  const { sheets, spreadsheetId, tab } = await getSheetsClient();
+
+  const range = `${tab}!A2:F`;
+  const resp = await withBackoff(
+    () => sheets.spreadsheets.values.get({ spreadsheetId, range }),
+    "getMeta(values.get)"
+  );
+
+  const values = (resp.data.values || []) as any[][];
+
+  const rows: MetaRow[] = [];
+  const brands: string[] = [];
+  const categories: string[] = [];
+  const sellers: string[] = [];
+
+  values.forEach((r, i) => {
+    const rowNumber = 2 + i;
+    const row = Array.isArray(r) ? r.map((c) => String(c ?? "")) : [];
+    while (row.length < 6) row.push("");
+
+    const id = String(row[0] ?? "").trim();
+    const slug = String(row[1] ?? "").trim();
+    const title = String(row[2] ?? "").trim();
+    const brand = String(row[3] ?? "").trim();
+    const category = String(row[4] ?? "").trim();
+    const seller = String(row[5] ?? "").trim();
+
+    if (!title) return;
+
+    rows.push({ rowNumber, id, slug, title, brand, category, seller });
+    if (brand) brands.push(brand);
+    if (category) categories.push(category);
+    if (seller) sellers.push(seller);
+  });
+
+  const facets: Facets = {
+    brands: uniqueSorted(brands),
+    categories: uniqueSorted(categories),
+    sellers: uniqueSorted(sellers),
+  };
+
+  return { rows, facets };
+}
+
+const getMetaCached = unstable_cache(
+  async () => _getMetaUncached(),
+  [`${CACHE_PREFIX}:meta:v2`],
+  { revalidate: REVALIDATE_SECONDS }
+);
+
+async function getMeta(): Promise<{ rows: MetaRow[]; facets: Facets }> {
+  return getMetaCached();
+}
+
+function filterRowNumbers(
+  metaRows: MetaRow[],
+  opts: { q?: string; brand?: string; category?: string; seller?: string }
+): number[] {
+  const q = normLite(opts.q || "");
+  const brand = String(opts.brand || "").trim();
+  const category = String(opts.category || "").trim();
+  const seller = String(opts.seller || "").trim();
+
+  const hasBrand = brand && brand !== "all";
+  const hasCategory = category && category !== "all";
+  const hasSeller = seller && seller !== "all";
+
+  return metaRows
+    .filter((r) => {
+      if (hasBrand && r.brand !== brand) return false;
+      if (hasCategory && r.category !== category) return false;
+      if (hasSeller && r.seller !== seller) return false;
+
+      if (q) {
+        const hay = normLite(`${r.title} ${r.brand} ${r.seller} ${r.category}`);
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    })
+    .map((r) => r.rowNumber);
+}
+
+async function getShuffledRowNumbers(cacheKey: string, rowNumbers: number[]) {
+  // shuffle deterministico: caching non indispensabile, ma è leggero
+  const seed = seedFromString(cacheKey);
+  return shuffleInPlace([...rowNumbers], seed);
+}
+
+async function getItemsCount(): Promise<number> {
+  // ✅ zero chiamate extra: count = meta.rows.length
+  const meta = await getMeta();
+  return meta.rows.length;
+}
+
+/** ---------- fetch rows (cached persistent) ---------- */
+
+async function _fetchItemsByRowNumbersUncached(rowNumbers: number[]): Promise<SheetItem[]> {
   if (!rowNumbers.length) return [];
 
   const { sheets, spreadsheetId, tab } = await getSheetsClient();
   const ranges = rowNumbers.map((rn) => `${tab}!A${rn}:T${rn}`);
 
-  const resp = await sheets.spreadsheets.values.batchGet({
-    spreadsheetId,
-    ranges,
-  });
+  const resp = await withBackoff(
+    () => sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges }),
+    "fetchItemsByRowNumbers(batchGet)"
+  );
 
-  const cnyToEur = await getCnyToEurRate();
+  const cnyToEur = await getCnyToEurRateCached();
   const byRow = new Map<number, SheetItem>();
 
   for (const vr of resp.data.valueRanges || []) {
@@ -664,50 +669,43 @@ async function fetchItemsByRowNumbers(rowNumbers: number[]): Promise<SheetItem[]
   return rowNumbers.map((rn) => byRow.get(rn)).filter(Boolean) as SheetItem[];
 }
 
+async function fetchItemsByRowNumbers(rowNumbers: number[]): Promise<SheetItem[]> {
+  const keyPayload = stableStringify({ rows: rowNumbers });
+  const key = `${CACHE_PREFIX}:rows:v2:${hash36(keyPayload)}`;
+
+  const cachedFn = unstable_cache(
+    async () => _fetchItemsByRowNumbersUncached(rowNumbers),
+    [key],
+    { revalidate: REVALIDATE_SECONDS }
+  );
+
+  return cachedFn();
+}
+
+/** ---------- public APIs ---------- */
+
 export async function getItemsPage(page: number, pageSize = 42): Promise<PageResult> {
   const p = Math.max(1, Math.floor(Number(page) || 1));
   const ps = Math.max(1, Math.floor(Number(pageSize) || 42));
 
-  const cacheKey = `${p}:${ps}`;
-  const ttl = TTL_MS();
-  const now = Date.now();
-  const cached = pageCache.get(cacheKey);
-  if (cached && now - cached.ts < ttl) return cached.data;
-
-  const totalItems = await getItemsCount();
+  // ✅ pagina deterministica "default": usa meta + batchGet per evitare range grossi
+  const meta = await getMeta();
+  const totalItems = meta.rows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / ps));
   const safePage = Math.min(p, totalPages);
 
-  const startRow = 2 + (safePage - 1) * ps;
-  const endRow = startRow + ps - 1;
+  const startIdx = (safePage - 1) * ps;
+  const sliceRows = meta.rows.slice(startIdx, startIdx + ps).map((r) => r.rowNumber);
 
-  const { sheets, spreadsheetId, tab } = await getSheetsClient();
-  const range = `${tab}!A${startRow}:T${endRow}`;
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  const items = await fetchItemsByRowNumbers(sliceRows);
 
-  const rows = (resp.data.values || []) as any[][];
-  const cnyToEur = await getCnyToEurRate();
-
-  const items = rows
-    .map((r, idx) => {
-      const rowNumber = startRow + idx;
-      const row = Array.isArray(r) ? r.map((c) => String(c ?? "")) : [];
-      while (row.length < 20) row.push("");
-      return parseRowFixed(row, rowNumber, cnyToEur);
-    })
-    .filter(Boolean) as SheetItem[];
-
-  const data: PageResult = {
+  return {
     items,
     page: safePage,
     pageSize: ps,
     totalItems,
     totalPages,
   };
-
-  pageCache.set(cacheKey, { ts: now, data });
-  pruneMap(pageCache, 180);
-  return data;
 }
 
 export async function getSpreadsheetPage(
@@ -734,44 +732,47 @@ export async function getSpreadsheetPage(
   const baseSeed = (opts?.seed || "").trim() || getBaseShuffleSeed();
   const filterSeedKey = `${baseSeed}|b=${brand}|c=${category}|s=${seller}|q=${q}`;
 
-  const cacheKey = `sp:${order}:${p}:${ps}:${filterSeedKey}`;
-  const ttl = TTL_MS();
-  const now = Date.now();
-  const cached = spreadsheetCache.get(cacheKey);
-  if (cached && now - cached.ts < ttl) return cached.data;
+  // ✅ cache persistent per l'intera pagina/filtri/seed
+  const cacheKey = `${CACHE_PREFIX}:sp:v3:${hash36(
+    stableStringify({ order, p, ps, filterSeedKey })
+  )}`;
 
-  const meta = await getMeta();
-  const allFacets = meta.facets;
+  const cachedFn = unstable_cache(
+    async () => {
+      const meta = await getMeta();
+      const allFacets = meta.facets;
 
-  const filteredRowNumbers = filterRowNumbers(meta.rows, { q, brand, category, seller });
+      const filteredRowNumbers = filterRowNumbers(meta.rows, { q, brand, category, seller });
 
-  const orderedRowNumbers =
-    order === "default"
-      ? filteredRowNumbers
-      : await getShuffledRowNumbers(filterSeedKey, filteredRowNumbers);
+      const orderedRowNumbers =
+        order === "default"
+          ? filteredRowNumbers
+          : await getShuffledRowNumbers(filterSeedKey, filteredRowNumbers);
 
-  const totalItems = orderedRowNumbers.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / ps));
-  const safePage = Math.min(p, totalPages);
+      const totalItems = orderedRowNumbers.length;
+      const totalPages = Math.max(1, Math.ceil(totalItems / ps));
+      const safePage = Math.min(p, totalPages);
 
-  const startIdx = (safePage - 1) * ps;
-  const slice = orderedRowNumbers.slice(startIdx, startIdx + ps);
+      const startIdx = (safePage - 1) * ps;
+      const slice = orderedRowNumbers.slice(startIdx, startIdx + ps);
 
-  const items = await fetchItemsByRowNumbers(slice);
+      const items = await fetchItemsByRowNumbers(slice);
 
-  const data: PageResult & { facets: Facets; order: "default" | "random" } = {
-    items,
-    page: safePage,
-    pageSize: ps,
-    totalItems,
-    totalPages,
-    facets: allFacets,
-    order,
-  };
+      return {
+        items,
+        page: safePage,
+        pageSize: ps,
+        totalItems,
+        totalPages,
+        facets: allFacets,
+        order,
+      };
+    },
+    [cacheKey],
+    { revalidate: REVALIDATE_SECONDS }
+  );
 
-  spreadsheetCache.set(cacheKey, { ts: now, data });
-  pruneMap(spreadsheetCache, 200);
-  return data;
+  return cachedFn();
 }
 
 export async function getItemsPreview(limit = 18): Promise<SheetItem[]> {
@@ -782,33 +783,8 @@ export async function getItemsPreview(limit = 18): Promise<SheetItem[]> {
 
 export async function getItemsHead(limit = 120): Promise<SheetItem[]> {
   const ps = Math.max(1, Math.floor(Number(limit) || 120));
-
-  const cacheKey = String(ps);
-  const ttl = TTL_MS();
-  const now = Date.now();
-  const cached = headCache.get(cacheKey);
-  if (cached && now - cached.ts < ttl) return cached.items;
-
-  const { sheets, spreadsheetId, tab } = await getSheetsClient();
-  const endRow = 1 + ps;
-  const range = `${tab}!A2:T${endRow}`;
-
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-  const rows = (resp.data.values || []) as any[][];
-  const cnyToEur = await getCnyToEurRate();
-
-  const items = rows
-    .map((r, idx) => {
-      const rowNumber = 2 + idx;
-      const row = Array.isArray(r) ? r.map((c) => String(c ?? "")) : [];
-      while (row.length < 20) row.push("");
-      return parseRowFixed(row, rowNumber, cnyToEur);
-    })
-    .filter(Boolean) as SheetItem[];
-
-  headCache.set(cacheKey, { ts: now, items });
-  pruneMap(headCache, 50);
-  return items;
+  const res = await getItemsPage(1, ps);
+  return res.items;
 }
 
 type ItemIndex = {
@@ -828,29 +804,20 @@ export async function getItemBySlugOrId(slugOrId: string): Promise<SheetItem | n
   const now = Date.now();
 
   if (!indexCache || now - indexCache.ts >= ttl) {
-    const { sheets, spreadsheetId, tab } = await getSheetsClient();
-
-    const range = `${tab}!A2:C`;
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-    const rows = (resp.data.values || []) as any[][];
+    const meta = await getMeta();
 
     const bySlug = new Map<string, number>();
     const byTitle = new Map<string, number>();
     const byId = new Map<string, number>();
 
-    rows.forEach((r, i) => {
-      const id = String(r?.[0] ?? "").trim();
-      const slug = String(r?.[1] ?? "").trim();
-      const title = String(r?.[2] ?? "").trim();
-      const rowNumber = 2 + i;
+    meta.rows.forEach((r) => {
+      const idKey = normalizeSlug(r.id);
+      const slugKey = normalizeSlug(r.slug);
+      const titleKey = normalizeSlug(r.title);
 
-      const idKey = normalizeSlug(id);
-      const slugKey = normalizeSlug(slug);
-      const titleKey = normalizeSlug(title);
-
-      if (idKey && !byId.has(idKey)) byId.set(idKey, rowNumber);
-      if (slugKey && !bySlug.has(slugKey)) bySlug.set(slugKey, rowNumber);
-      if (titleKey && !byTitle.has(titleKey)) byTitle.set(titleKey, rowNumber);
+      if (idKey && !byId.has(idKey)) byId.set(idKey, r.rowNumber);
+      if (slugKey && !bySlug.has(slugKey)) bySlug.set(slugKey, r.rowNumber);
+      if (titleKey && !byTitle.has(titleKey)) byTitle.set(titleKey, r.rowNumber);
     });
 
     indexCache = { ts: now, bySlug, byTitle, byId };
@@ -863,16 +830,8 @@ export async function getItemBySlugOrId(slugOrId: string): Promise<SheetItem | n
 
   if (!rowNumber) return null;
 
-  const { sheets, spreadsheetId, tab } = await getSheetsClient();
-  const range = `${tab}!A${rowNumber}:T${rowNumber}`;
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-  const row = (resp.data.values?.[0] || []) as any[];
-
-  const cells = Array.isArray(row) ? row.map((c) => String(c ?? "")) : [];
-  while (cells.length < 20) cells.push("");
-
-  const cnyToEur = await getCnyToEurRate();
-  return parseRowFixed(cells, rowNumber, cnyToEur);
+  const items = await fetchItemsByRowNumbers([rowNumber]);
+  return items[0] || null;
 }
 
 export async function getItemsFromSheet(): Promise<SheetItem[]> {
