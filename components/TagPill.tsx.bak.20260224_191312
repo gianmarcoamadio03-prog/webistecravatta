@@ -1,0 +1,90 @@
+"use client";
+
+import React from "react";
+
+type Props = {
+  label: string;
+  size?: "sm" | "md";
+  className?: string;
+  title?: string;
+};
+
+function normTag(s: string) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function hash36(input: string) {
+  const s = String(input || "");
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
+  return (h >>> 0).toString(36);
+}
+
+const FALLBACK_STYLES = [
+  "border-emerald-400/25 bg-emerald-500/10 text-emerald-100",
+  "border-cyan-400/25 bg-cyan-500/10 text-cyan-100",
+  "border-blue-400/25 bg-blue-500/10 text-blue-100",
+  "border-indigo-400/25 bg-indigo-500/10 text-indigo-100",
+  "border-violet-400/25 bg-violet-500/10 text-violet-100",
+  "border-fuchsia-400/25 bg-fuchsia-500/10 text-fuchsia-100",
+  "border-rose-400/25 bg-rose-500/10 text-rose-100",
+  "border-amber-400/25 bg-amber-500/10 text-amber-100",
+];
+
+function styleForTag(label: string) {
+  const t = normTag(label);
+
+  const rules: Array<{ re: RegExp; cls: string }> = [
+    // category-ish
+    { re: /\bsneakers?\b|\bshoes?\b|\bboots?\b|\btrainer(s)?\b|\brunner\b/i, cls: "border-blue-400/30 bg-blue-500/12 text-blue-100" },
+    { re: /\bhoodie(s)?\b|\bsweatshirt(s)?\b|\bcrewneck\b/i, cls: "border-violet-400/30 bg-violet-500/12 text-violet-100" },
+    { re: /\bt\s*shirt(s)?\b|\btee(s)?\b|\blongsleeve(s)?\b|\blong sleeve\b/i, cls: "border-cyan-400/30 bg-cyan-500/12 text-cyan-100" },
+    { re: /\bpants?\b|\bjeans?\b|\bshorts?\b|\bjogger(s)?\b/i, cls: "border-amber-400/30 bg-amber-500/12 text-amber-100" },
+    { re: /\bbags?\b|\bwallet(s)?\b|\bbelt(s)?\b|\bscarf(s)?\b|\bglasses?\b|\bsunglasses?\b/i, cls: "border-emerald-400/30 bg-emerald-500/12 text-emerald-100" },
+
+    // brands / common tags
+    { re: /\blv\b|\blouis vuitton\b|\bvuitton\b/i, cls: "border-amber-300/35 bg-amber-400/10 text-amber-100" },
+    { re: /\bdior\b|\bb22\b|\bb23\b|\bb25\b|\bb27\b|\bb30\b/i, cls: "border-slate-300/30 bg-slate-500/10 text-slate-100" },
+    { re: /\bprada\b|\bamericas cup\b/i, cls: "border-emerald-300/30 bg-emerald-500/10 text-emerald-100" },
+    { re: /\bgucci\b/i, cls: "border-green-300/30 bg-green-500/10 text-green-100" },
+    { re: /\bmoncler\b|\bcanada goose\b|\btnf\b|\bthe north face\b/i, cls: "border-sky-300/30 bg-sky-500/10 text-sky-100" },
+    { re: /\bsupreme\b/i, cls: "border-rose-300/35 bg-rose-500/12 text-rose-100" },
+    { re: /\bstussy\b/i, cls: "border-fuchsia-300/30 bg-fuchsia-500/10 text-fuchsia-100" },
+    { re: /\boff white\b|\boff-white\b/i, cls: "border-zinc-300/30 bg-zinc-500/10 text-zinc-100" },
+    { re: /\bnike\b|\bjordan\b/i, cls: "border-orange-300/30 bg-orange-500/10 text-orange-100" },
+    { re: /\badidas\b|\byeezy\b/i, cls: "border-indigo-300/30 bg-indigo-500/10 text-indigo-100" },
+
+    // generic
+    { re: /\bmulti brand\b|\bmultibrand\b/i, cls: "border-white/18 bg-white/7 text-white/80" },
+    { re: /\bpremium\b/i, cls: "border-white/18 bg-white/7 text-white/80" },
+  ];
+
+  for (const r of rules) {
+    if (r.re.test(t)) return r.cls;
+  }
+
+  const h = parseInt(hash36(t).slice(0, 2), 36);
+  return FALLBACK_STYLES[h % FALLBACK_STYLES.length];
+}
+
+export default function TagPill({ label, size = "sm", className = "", title }: Props) {
+  const cls = styleForTag(label);
+  const px = size === "md" ? "px-3 py-1.5 text-[12px]" : "px-2.5 py-1 text-[11px]";
+  return (
+    <span
+      title={title || label}
+      className={[
+        "inline-flex items-center rounded-full border backdrop-blur",
+        px,
+        cls,
+        className,
+      ].join(" ")}
+    >
+      {label}
+    </span>
+  );
+}

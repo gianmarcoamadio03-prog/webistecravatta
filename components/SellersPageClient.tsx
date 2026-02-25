@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Seller, SellerCard } from "@/data/sellersShared";
 import { inferStoreType, toWhatsAppHref } from "@/data/sellersShared";
+import TagPill from "@/components/TagPill";
+import SellerAvatar from "@/components/SellerAvatar";
 
 type Props = { sellers: Seller[]; cards: SellerCard[] };
 
@@ -62,7 +64,8 @@ export default function SellersPageClient({ sellers, cards }: Props) {
 
       {cards.length === 0 ? (
         <div className="mt-6 text-center text-white/55">
-          Nessuna “Selezione del mese” disponibile (tab <b>seller_cards</b> vuoto).
+          Nessuna “Selezione del mese” disponibile (tab <b>seller_cards</b>{" "}
+          vuoto).
         </div>
       ) : (
         <SellerCardsCarousel
@@ -117,7 +120,8 @@ export default function SellersPageClient({ sellers, cards }: Props) {
 
           {filtered.length === 0 && (
             <div className="mt-10 text-center text-white/55">
-              Nessun seller trovato. Controlla i tab <b>sellers</b> e <b>seller_cards</b> nel Google Sheet.
+              Nessun seller trovato. Controlla i tab <b>sellers</b> e{" "}
+              <b>seller_cards</b> nel Google Sheet.
             </div>
           )}
         </div>
@@ -251,7 +255,9 @@ function SellerCardsCarousel({
             const img = c.image || "";
             const wa = toWhatsAppHref(seller?.whatsapp);
             const storeType = inferStoreType(seller?.store_url);
-            const desc = (c.description ?? (c as any).subtitle ?? "").toString().trim();
+            const desc = (c.description ?? (c as any).subtitle ?? "")
+              .toString()
+              .trim();
 
             return (
               <div
@@ -272,6 +278,7 @@ function SellerCardsCarousel({
               >
                 <div className="sheet-card-media">
                   {img ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={img} alt={c.title} loading="lazy" />
                   ) : (
                     <div className="w-full h-full bg-white/5" />
@@ -364,24 +371,27 @@ function SellerRow({ s, onOpen }: { s: Seller; onOpen: () => void }) {
   const wa = toWhatsAppHref(s.whatsapp);
   const storeType = inferStoreType(s.store_url);
 
+  const avatarSrc = String((s as any).image || (s as any).avatar || "").trim();
+
   return (
     <div className="rounded-3xl border border-white/12 bg-white/5 backdrop-blur-md px-5 py-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-lg font-semibold text-white/95">{s.name}</div>
+        <div className="min-w-0 flex items-center gap-3">
+          <SellerAvatar name={s.name} src={avatarSrc} size={42} />
 
-          {s.tags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {s.tags.map((t) => (
-                <span
-                  key={t}
-                  className="text-xs px-3 py-1 rounded-full border border-white/12 bg-white/6 text-white/70"
-                >
-                  {t}
-                </span>
-              ))}
+          <div className="min-w-0">
+            <div className="text-lg font-semibold text-white/95 truncate">
+              {s.name}
             </div>
-          )}
+
+            {s.tags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {s.tags.map((t) => (
+                  <TagPill key={t} label={t} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -493,6 +503,7 @@ function SellerModal({
       >
         {cover ? (
           <div className="h-56 w-full overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={cover}
               alt={seller.name}
@@ -503,18 +514,15 @@ function SellerModal({
 
         <div className="p-6">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-2xl font-semibold text-white/95">{seller.name}</div>
+            <div className="min-w-0">
+              <div className="text-2xl font-semibold text-white/95">
+                {seller.name}
+              </div>
 
               {seller.tags.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {seller.tags.map((t) => (
-                    <span
-                      key={t}
-                      className="text-xs px-3 py-1 rounded-full border border-white/12 bg-white/6 text-white/70"
-                    >
-                      {t}
-                    </span>
+                    <TagPill key={t} label={t} size="md" />
                   ))}
                 </div>
               )}

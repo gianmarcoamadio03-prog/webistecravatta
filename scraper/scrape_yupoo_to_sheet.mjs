@@ -633,6 +633,60 @@ function normalizeTitleMode(mode, titleProvided = "") {
   return "AUTO";
 }
 
+
+function looksDescriptiveTitle(titleRaw) {
+  const t = String(titleRaw || "").trim();
+  if (t.length < 6) return false;
+  const hasLetters = /[A-Za-z]{3,}/.test(t);
+  const hasCjk = /[一-鿿]/.test(t);
+  const digits = (t.match(/d/g) || []).length;
+  // se è quasi tutto numeri/codici, non è descrittivo
+  if (!hasLetters && !hasCjk) return false;
+  if (digits > 10 && t.length < 18) return false;
+  return true;
+}
+
+function shouldTryShoeNameAi(titleRaw, crumbText, bodyText) {
+  // usa AI per modello scarpa solo se Yupoo non è descrittivo
+  if (!looksDescriptiveTitle(titleRaw)) return true;
+  // se breadcrumb è molto povero e title è generico, prova
+  const c = String(crumbText || "").trim();
+  if (!c && String(bodyText || "").trim().length < 30) return true;
+  return false;
+}
+
+function shouldUseAiFallback({ aiEnabled, wantsAutoBrand, wantsAutoCat, detectedType, img1Final }) {
+  const isOther = String(detectedType || "OTHER") === "OTHER";
+
+  // AI SOLO quando non troviamo la categoria dai testi (OTHER)
+  const shouldAiBrand = !!wantsAutoBrand && isOther;
+  const shouldAiCat = !!wantsAutoCat && isOther;
+
+  const use = !!aiEnabled && !!openai && !!img1Final && (shouldAiBrand || shouldAiCat);
+  return { use, shouldAiBrand, shouldAiCat };
+}
+
+function shouldTryShoeNameAi__dup2(titleRaw, crumbText, bodyText) {
+  // usa AI per modello scarpa solo se Yupoo non è descrittivo
+  if (!looksDescriptiveTitle(titleRaw)) return true;
+  // se breadcrumb è molto povero e title è generico, prova
+  const c = String(crumbText || "").trim();
+  if (!c && String(bodyText || "").trim().length < 30) return true;
+  return false;
+}
+
+function shouldUseAiFallback__dup2({ aiEnabled, wantsAutoBrand, wantsAutoCat, detectedType, img1Final }) {
+  const isOther = String(detectedType || "OTHER") === "OTHER";
+
+  // AI SOLO quando non troviamo la categoria dai testi (OTHER)
+  const shouldAiBrand = !!wantsAutoBrand && isOther;
+  const shouldAiCat = !!wantsAutoCat && isOther;
+
+  const use = !!aiEnabled && !!openai && !!img1Final && (shouldAiBrand || shouldAiCat);
+  return { use, shouldAiBrand, shouldAiCat };
+}
+
+
 // =====================
 // AI in-memory cache (seeded from disk)
 // =====================
@@ -1260,6 +1314,43 @@ const CATEGORY_ALIASES = {
   PERFUMES: "FRAGRANCES",
   FRAGRANCE: "FRAGRANCES",
   FRAGRANCES: "FRAGRANCES",
+  SWEATER: "SWEATERS",
+  SWEATERS: "SWEATERS",
+  PULLOVER: "SWEATERS",
+  PULLOVERS: "SWEATERS",
+  JUMPER: "SWEATERS",
+  JUMPERS: "SWEATERS",
+  TURTLENECK: "SWEATERS",
+  TURTLENECKS: "SWEATERS",
+  MOCKNECK: "SWEATERS",
+  MOCKNECKS: "SWEATERS",
+  KNITWEAR: "KNITWEAR",
+  KNITTED: "KNITWEAR",
+  CARDIGAN: "CARDIGANS",
+  CARDIGANS: "CARDIGANS",
+  LONG_SLEE: "LONGSLEEVES",
+  LONG_SLEEE: "LONGSLEEVES",
+  LONG_SLEEVED: "LONGSLEEVES",
+  // Knit / sweaters
+  SWEATER: "SWEATERS",
+  SWEATERS: "SWEATERS",
+  JUMPER: "SWEATERS",
+  JUMPERS: "SWEATERS",
+  PULLOVER: "SWEATERS",
+  PULLOVERS: "SWEATERS",
+  KNIT: "KNITWEAR",
+  KNITS: "KNITWEAR",
+  KNITTED: "KNITWEAR",
+  KNITWEAR: "KNITWEAR",
+  CARDIGAN: "CARDIGANS",
+  CARDIGANS: "CARDIGANS",
+
+  // Scarves
+  SCARF: "SCARVES",
+  SCARFS: "SCARVES",
+  SCARVES: "SCARVES",
+  SHAWL: "SCARVES",
+  SHAWLS: "SCARVES",
 };
 
 function canonicalizeCategory(raw) {
@@ -1338,30 +1429,65 @@ function maybePrefixBrand(title, brandHint) {
   return `${b.toUpperCase()} ${t}`.trim();
 }
 
+function fixCommonTyposForType(t) {
+  let s = ` ${String(t || "")} `;
+
+  // typo comuni visti nei tuoi album
+  s = s.replace(/\bswearter(s)?\b/g, " sweater$1 ");
+  s = s.replace(/\bswetear(s)?\b/g, " sweater$1 ");
+  s = s.replace(/\blong[-\s]*sle+e+\b/g, " long sleeve "); // long-sleee (senza v)
+  s = s.replace(/\bscarfs?\b/g, " scarf ");
+
+  return s.trim();
+}
+
 function detectProductTypeFromTitle(titleRaw) {
-  const t = normalizeForMatch(titleRaw);
+  let t = normalizeForMatch(titleRaw);
+  t = fixCommonTyposForType(t);
 
   const rules = [
+    // Accessories first (così SCARF non finisce in OTHER)
+    { type: "SCARVES", re: /\bscarf(s)?\b|\bshawl(s)?\b|\bfoulard\b|\bsciarpa\b|\b围巾\b/ },
+
+    // Knit / sweaters
+    { type: "CARDIGANS", re: /\bcardigan(s)?\b/ },
+    { type: "KNITWEAR", re: /\bknit\s*wear\b|\bknitted\b|\bmaglia\b|\btricot\b/ },
+    { type: "SWEATERS", re: /\bsweater(s)?\b|\bjumper(s)?\b|\bpullover(s)?\b|\bmaglione\b|\bpull\b/ },
+
+    // Fragrance
     { type: "FRAGRANCES", re: /\bperfume\b|\bparfum\b|\bfragrance\b|\bcologne\b|\beau de\b|\bprofumo\b/ },
-    { type: "HOODIES", re: /\bhoodie(s)?\b|\bhooded\b|\bfelpa con cappuccio\b|\bfelpa hoodie\b|\b卫衣\b/ },
+
+    // Tops
+    { type: "HOODIES", re: /\bhoodie(s)?\b|\bhooded\b|\bfelpa con cappuccio\b|\b卫衣\b/ },
     { type: "SWEATSHIRTS", re: /\bsweatshirt(s)?\b|\bcrewneck\b|\bgirocollo\b|\bfelpa\b/ },
-    { type: "SWEATPANTS", re: /\bsweatpants\b|\bpantaloni tuta\b|\bjogger pants\b/ },
-    { type: "JOGGERS", re: /\bjoggers?\b|\bpantaloni jogger\b/ },
-    { type: "TSHIRTS", re: /\bt\s*-\s*shirt\b|\bt\s*shirt\b|\btshirt\b|\btee\b|\bmaglietta\b|\btee\s*shirt\b|\b短袖\b/ },
-    { type: "LONGSLEEVES", re: /\blong\s*sleeve\b|\b长袖\b/ },
+
+    // LONGSLEEVE: include long-sleeve/long sleeve/longsleeve + typo (slee+v?e)
+    { type: "LONGSLEEVES", re: /\blong[-\s]*slee+v?e\b|\bl\/s\b|\bls\s*tee\b|\blong\s*sleeve\b|\b长袖\b/ },
+
+    { type: "TSHIRTS", re: /\bt\s*-\s*shirt\b|\bt\s*shirt\b|\btshirt\b|\btee\b|\bmaglietta\b|\b短袖\b/ },
     { type: "SHIRTS", re: /\bshirt(s)?\b|\bbutton\s*up\b|\bcamicia\b/ },
     { type: "POLOS", re: /\bpolo(s)?\b/ },
+
+    // Bottoms
     { type: "JEANS", re: /\bjeans\b|\bdenim\b|\bjean\b|\b牛仔\b/ },
     { type: "SHORTS", re: /\bshort(s)?\b|\bbermuda\b/ },
     { type: "PANTS", re: /\btrousers?\b|\bpants\b|\bpantaloni\b|\b裤\b/ },
+    { type: "SWEATPANTS", re: /\bsweatpants\b|\bpantaloni tuta\b/ },
+    { type: "JOGGERS", re: /\bjoggers?\b|\bpantaloni jogger\b/ },
+
+    // Outerwear
     { type: "JACKETS", re: /\bjacket(s)?\b|\bgiacca\b|\b外套\b/ },
     { type: "PUFFERS", re: /\bpuffer\b|\bdown\s*jacket\b|\bpiumino\b/ },
     { type: "COATS", re: /\bcoat(s)?\b|\bcappotto\b/ },
+
+    // Footwear
     { type: "SLIDES", re: /\bslides?\b|\bciabatt(e|a)\b/ },
     { type: "SANDALS", re: /\bsandals?\b|\bflip\s*flops?\b/ },
     { type: "SNEAKERS", re: /\bsneakers?\b|\btrainers?\b|\bscarpe da ginnastica\b|\b运动鞋\b/ },
     { type: "BOOTS", re: /\bboots?\b|\bstivali\b/ },
     { type: "SHOES", re: /\bshoes?\b|\bscarpe\b|\b皮鞋\b/ },
+
+    // Bags / small leather / headwear
     { type: "BAGS", re: /\bbag(s)?\b|\bborsa\b|\b包\b/ },
     { type: "WALLETS", re: /\bwallet(s)?\b|\bportafoglio\b/ },
     { type: "BELTS", re: /\bbelt(s)?\b|\bcintura\b/ },
@@ -1376,6 +1502,58 @@ function detectProductTypeFromTitle(titleRaw) {
     if (r.re.test(t)) return r.type;
   }
   return "OTHER";
+}
+
+// AI_FALLBACK_V2_1_APPLIED
+// AI fallback: prova prima da testo (title + breadcrumb + body), poi (solo se serve) AI immagine.
+async function getYupooBreadcrumbText(page) {
+  try {
+    return await page.evaluate(() => {
+      const out = [];
+      const push = (s) => {
+        const t = String(s || "").replace(/\s+/g, " ").trim();
+        if (t && t.length >= 2) out.push(t);
+      };
+
+      const selectors = [
+        ".showalbumheader__breadcrumb",
+        ".showalbumheader__bread",
+        ".breadcrumb",
+        ".breadcrumbs",
+        ".crumb",
+        ".crumbs",
+        "nav[aria-label='breadcrumb']",
+        ".album__breadcrumb",
+        ".category__breadcrumb",
+      ];
+
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) push(el.textContent || "");
+      }
+
+      // best-effort: anche qualche link “categoria” breve
+      const linkTexts = Array.from(document.querySelectorAll("a"))
+        .map((a) => (a.textContent || "").trim())
+        .filter((t) => t && t.length <= 40);
+
+      for (const t of linkTexts.slice(0, 40)) push(t);
+
+      return out.join(" | ");
+    });
+  } catch {
+    return "";
+  }
+}
+
+function detectProductTypeFromSignals(titleRaw, crumbText, bodyText) {
+  const combo =
+    String(titleRaw || "") +
+    " " +
+    String(crumbText || "") +
+    " " +
+    String(bodyText || "").slice(0, 1500);
+  return detectProductTypeFromTitle(combo);
 }
 
 function buildDisplayName(titleRaw, brandOverride = "", forcedType = "") {
@@ -2227,6 +2405,17 @@ async function getAlbumTitle(page) {
   return String(title || "").replace(/\s+/g, " ").trim();
 }
 
+function detectTypeFromYupooSignals(titleRaw, bodyText, crumbText) {
+  const combo = String(titleRaw || "") + " " + String(crumbText || "") + " " + String((bodyText || "").slice(0, 1500));
+  return detectProductTypeFromTitle(combo);
+}
+
+function detectTypeFromYupooSignals__dup2(titleRaw, bodyText, crumbText) {
+  const combo = String(titleRaw || "") + " " + String(crumbText || "") + " " + String((bodyText || "").slice(0, 1500));
+  return detectProductTypeFromTitle(combo);
+}
+
+
 function reorderImagesForImg1(images, img1Pick) {
   const list = Array.isArray(images) ? [...images] : [];
   const pick = Number(img1Pick || 0);
@@ -2498,9 +2687,20 @@ async function scrape1688OfferOnPage(
   const wantsAutoBrand = !brandRaw || brandRaw.toUpperCase() === "AUTO";
   const wantsAutoCat = !catRaw || catRaw.toUpperCase() === "AUTO";
 
-  const detectedType = detectProductTypeFromTitle(titleRaw);
-  const shouldAiBrand = wantsAutoBrand;
-  const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
+      // 🔎 Try to detect category from multiple Yupoo signals BEFORE using AI
+const crumbText = await getYupooBreadcrumbText(page).catch(() => "");
+const detectedTypeTitle = detectProductTypeFromTitle(titleRaw);
+const detectedTypeCrumb = detectProductTypeFromTitle(crumbText);
+const detectedTypeBody = detectProductTypeFromTitle(String(bodyText || "").slice(0, 1500));
+
+const detectedType =
+  detectedTypeTitle !== "OTHER" ? detectedTypeTitle :
+  detectedTypeCrumb !== "OTHER" ? detectedTypeCrumb :
+  detectedTypeBody !== "OTHER" ? detectedTypeBody :
+  "OTHER";
+
+const shouldAiBrand = wantsAutoBrand;
+const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
 
   let aiBrand = "";
   let aiCat = "";
@@ -2540,15 +2740,18 @@ async function scrape1688OfferOnPage(
   } else {
     if (FOOTWEAR_TYPES.has(finalCategory)) {
       const brandHint = (String(finalBrand || "").trim() || String(brandRaw || "").trim()).trim();
-      const shoeNameRaw = await aiDetectFootwearNameFromCover(
-        context,
-        img1Final,
-        brandHint,
-        titleRaw,
-        bodyText,
-        normUrl,
-        { aiEnabled, shoeNameEnabled }
-      );
+      const tryShoeNameAi = shoeNameEnabled && shouldTryShoeNameAi(titleRaw, (typeof crumbText !== "undefined" ? crumbText : ""), bodyText);
+        const shoeNameRaw = tryShoeNameAi
+          ? await aiDetectFootwearNameFromCover(
+              context,
+              img1Final,
+              brandHint,
+              titleRaw,
+              bodyText,
+              normUrl,
+              { aiEnabled, shoeNameEnabled }
+            )
+          : "";
       const shoeName = removeRedundantBrandPrefix(shoeNameRaw, brandHint);
 
       if (shoeName) {
@@ -2721,6 +2924,7 @@ async function scrapeAlbumOnPage(
     const bodyText = await page.evaluate(() => document.body.innerText || "");
     const titleRaw = await getAlbumTitle(page);
 
+    const crumbText = await getYupooBreadcrumbText(page);
     const internal = pickBestInternalCoverBig(imagesBig, headerCoverRaw);
     const coverSmart =
       internal.picked ||
@@ -2750,9 +2954,8 @@ async function scrapeAlbumOnPage(
     const wantsAutoBrand = !brandRaw || brandRaw.toUpperCase() === "AUTO";
     const wantsAutoCat = !catRaw || catRaw.toUpperCase() === "AUTO";
 
-    const detectedType = detectProductTypeFromTitle(titleRaw);
-
-    const shouldAiBrand = wantsAutoBrand;
+      const detectedType = detectProductTypeFromSignals(titleRaw, "", bodyText);
+      const shouldAiBrand = wantsAutoBrand && detectedType === "OTHER";
     const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
 
     let aiBrand = "";
@@ -2794,15 +2997,18 @@ async function scrapeAlbumOnPage(
       if (FOOTWEAR_TYPES.has(finalCategory)) {
         const brandHint = (String(finalBrand || "").trim() || String(brandRaw || "").trim()).trim();
 
-        const shoeNameRaw = await aiDetectFootwearNameFromCover(
-          context,
-          img1Final,
-          brandHint,
-          titleRaw,
-          bodyText,
-          normUrl,
-          { aiEnabled, shoeNameEnabled }
-        );
+        const tryShoeNameAi = shoeNameEnabled && shouldTryShoeNameAi(titleRaw, (typeof crumbText !== "undefined" ? crumbText : ""), bodyText);
+        const shoeNameRaw = tryShoeNameAi
+          ? await aiDetectFootwearNameFromCover(
+              context,
+              img1Final,
+              brandHint,
+              titleRaw,
+              bodyText,
+              normUrl,
+              { aiEnabled, shoeNameEnabled }
+            )
+          : "";
 
         const shoeName = removeRedundantBrandPrefix(shoeNameRaw, brandHint);
 

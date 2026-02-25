@@ -3,6 +3,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import TagPill from "@/components/TagPill";
+import SellerAvatar from "@/components/SellerAvatar";
+import VerifiedBadge from "@/components/VerifiedBadge";
 
 export type Seller = {
   name: string;
@@ -104,17 +107,6 @@ function pickSpreadsheetHref(name: string) {
   return `/spreadsheet?seller=${encodeURIComponent(name)}`;
 }
 
-function chip(text: string) {
-  return (
-    <span
-      key={text}
-      className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/75 backdrop-blur"
-    >
-      {text}
-    </span>
-  );
-}
-
 function scoreForSort(s: Seller) {
   const featured = s.featured || s.best ? 1 : 0;
   const verified = s.verified ? 1 : 0;
@@ -197,28 +189,24 @@ function FeaturedCard({ s }: { s: Seller }) {
           <img
             src={imgs[0]}
             alt=""
-            className="h-full w-full object-cover opacity-90 transition duration-700 group-hover:scale-[1.04]"
+            className="h-full w-full object-cover opacity-85 transition duration-700 group-hover:scale-[1.04]"
             loading="lazy"
           />
         ) : (
           <div className="h-full w-full" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/15 to-black/60" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/70" />
 
         <div className="absolute bottom-0 left-0 right-0 p-4">
           <div className="flex items-center gap-2">
             <div className="truncate text-lg font-semibold tracking-tight text-white">
               {String(s.name)}
             </div>
-            {s.verified ? (
-              <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                Verificato
-              </span>
-            ) : null}
+            {s.verified ? <VerifiedBadge size={16} /> : null}
           </div>
 
           <div className="mt-2 flex flex-wrap gap-2">
-            {specs.length ? specs.map((x) => chip(x)) : chip("Premium")}
+            {specs.length ? specs.map((x) => <TagPill key={x} label={x} />) : <TagPill label="Premium" />}
             {itemsCount != null ? (
               <span className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[11px] text-white/70">
                 {itemsCount} articoli
@@ -258,7 +246,7 @@ function FeaturedCard({ s }: { s: Seller }) {
 }
 
 /**
- * Carousel mobile (come il tuo)
+ * Carousel mobile
  */
 function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -569,34 +557,22 @@ export default function SellersDirectory({ sellers }: SellersDirectoryProps) {
               return (
                 <div
                   key={String(s.name)}
-                  className="group flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 backdrop-blur transition hover:bg-white/[0.06]"
+                  className="group flex items-center justify-between gap-3 rounded-2xl border border-white/12 bg-white/[0.035] px-4 py-3 backdrop-blur transition hover:bg-white/[0.055] hover:border-white/20 hover:-translate-y-[1px]"
                 >
                   <div className="min-w-0 flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full border border-white/10 bg-white/10 overflow-hidden grid place-items-center shrink-0">
-                      {avatar ? (
-                        <img src={avatar} alt="" className="h-full w-full object-cover" loading="lazy" />
-                      ) : (
-                        <span className="text-sm font-semibold text-white/80">
-                          {String(s.name).slice(0, 1).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
+                    <SellerAvatar name={String(s.name)} src={avatar} size={40} />
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <div className="truncate text-sm font-semibold text-white">
                           {String(s.name)}
                         </div>
-                        {s.verified ? (
-                          <span className="shrink-0 inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] text-white/80">
-                            Verificato
-                          </span>
-                        ) : null}
+                        {s.verified ? <VerifiedBadge size={16} /> : null}
                       </div>
 
                       <div className="mt-1 flex flex-wrap gap-1.5">
                         {specs.length ? (
-                          specs.map((x) => chip(x))
+                          specs.map((x) => <TagPill key={x} label={x} />)
                         ) : (
                           <span className="text-[11px] text-white/45">Nessuna specialty</span>
                         )}

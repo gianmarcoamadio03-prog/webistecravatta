@@ -1,22 +1,23 @@
 "use strict";
 
 /**
- * corrector-category.mjs (v7)
+ * corrector-category.mjs (v8)
  *
- * FIX v7:
- * - NON cacheare OTHER/0 quando il problema è fetch/blocco/immagine troppo grande
- * - Fallback size: big -> medium -> small (se big è troppo grande o bloccata)
- * - NON tagliare la lista immagini subito: limita solo i tentativi con fetch OK
- * - Fallback extra: se tutte falliscono, prova a pescare og:image + photo urls dalla pagina album (referer)
- * - Cache key include anche origin del referer (riduce falsi negativi cross-seller)
+ * v8 ADD:
+ * - Page-hint BEFORE AI: usa la pagina Yupoo (colonna Q) per leggere breadcrumb/meta/keywords/JSON
+ *   e prova a dedurre category con le stesse REGEX/ALIASES dello scraper (gratis).
+ * - Taxonomy/aliases/rules allineati allo scraper (ALLOWED_TYPES + FOOTWEAR_TYPES + CATEGORY_ALIASES + rules).
  *
  * Restano:
  * - Scansiona SOLO righe con category=OTHER (default)
- * - Title-based detection (gratis) prima dell’AI
+ * - Title-based detection (gratis) prima di tutto
  * - AI multi-immagine (img1..img8 + extra_images) con pass1/pass2
  * - Flush a blocchi
  * - Cache su disco
  * - Priming / challenge helper per photo.yupoo.com (headful opzionale)
+ * - NO negative-cache su fetch/blocco/too-large
+ * - Fallback size: big -> medium -> small
+ * - Album fallback images: og:image + photo.yupoo urls
  */
 
 import fs from "fs";
@@ -44,7 +45,7 @@ dotenv.config({ path: path.join(PROJECT_ROOT, ".env.local") });
 // ENV
 // =====================================================
 const VERSION =
-  "2026-02-16 | corrector v7: no-negative-cache on fetch fail + size fallback + og:image fallback + smart attempts";
+  "2026-02-24 | corrector v8: page-hint from Yupoo URL (col Q) before AI + scraper-aligned taxonomy/rules";
 
 const SHEET_ID = (process.env.SHEET_ID || "").trim();
 const SHEET_TAB = (process.env.SHEET_TAB || "items").trim();
@@ -65,6 +66,13 @@ const CORRECTOR_ALLOW_AI_IN_DRY_RUN = String(process.env.CORRECTOR_ALLOW_AI_IN_D
 const CORRECTOR_ONLY_OTHER = String(process.env.CORRECTOR_ONLY_OTHER || "1").trim() !== "0";
 const CORRECTOR_USE_TITLE_HINT_FIRST = String(process.env.CORRECTOR_USE_TITLE_HINT_FIRST || "1").trim() !== "0";
 
+// ✅ NEW: page-hint da colonna Q (yupoo_url) prima dell'AI
+const CORRECTOR_USE_PAGE_HINT_FIRST = String(process.env.CORRECTOR_USE_PAGE_HINT_FIRST || "1").trim() !== "0";
+const CORRECTOR_PAGE_HINT_MIN_CONF = Math.max(
+  0,
+  Math.min(1, Number(String(process.env.CORRECTOR_PAGE_HINT_MIN_CONF || "0.70").trim()) || 0.7)
+);
+
 const CORRECTOR_FLUSH_EVERY = Math.max(1, Number(String(process.env.CORRECTOR_FLUSH_EVERY || "5").trim()) || 5);
 const CORRECTOR_CONCURRENCY = Math.max(1, Number(String(process.env.CORRECTOR_CONCURRENCY || "2").trim()) || 2);
 
@@ -81,7 +89,7 @@ const CORRECTOR_MAX_OUTPUT_TOKENS = Math.max(
 
 const CORRECTOR_RETRIES = Math.max(0, Number(String(process.env.CORRECTOR_RETRIES || "1").trim()) || 1);
 
-// IMPORTANT: ora CORRECTOR_MAX_IMAGES_TO_TRY conta SOLO immagini con fetch OK
+// IMPORTANT: CORRECTOR_MAX_IMAGES_TO_TRY conta SOLO immagini con fetch OK
 const CORRECTOR_MAX_IMAGES_TO_TRY = Math.max(
   1,
   Number(String(process.env.CORRECTOR_MAX_IMAGES_TO_TRY || "3").trim()) || 3
@@ -141,6 +149,7 @@ console.log("TAB:", SHEET_TAB);
 console.log("DRY_RUN:", CORRECTOR_DRY_RUN ? "ON" : "OFF", "| AI:", AI_ENABLED ? `ON (${CORRECTOR_MODEL})` : "OFF");
 console.log("FLUSH_EVERY:", CORRECTOR_FLUSH_EVERY, "| CONCURRENCY:", CORRECTOR_CONCURRENCY);
 console.log("MAX_IMAGES_TO_TRY:", CORRECTOR_MAX_IMAGES_TO_TRY, "| MIN_CONF:", CORRECTOR_MIN_CONFIDENCE);
+console.log("PAGE_HINT:", CORRECTOR_USE_PAGE_HINT_FIRST ? `ON (min=${CORRECTOR_PAGE_HINT_MIN_CONF})` : "OFF");
 console.log("storageState:", absPathFromRoot(YUPOO_STORAGE_STATE));
 console.log("====================================");
 
@@ -182,7 +191,7 @@ function normalizeForMatch(text) {
 }
 
 // =====================================================
-// Category taxonomy (match your scraper)
+// Category taxonomy (scraper-aligned)
 // =====================================================
 const ALLOWED_TYPES = new Set([
   "SNEAKERS","SHOES","BOOTS","CHELSEA_BOOTS","HIKING_BOOTS","LOAFERS","DERBIES","OXFORDS",
@@ -206,6 +215,7 @@ const ALLOWED_TYPES = new Set([
 
   "HATS","CAPS","BEANIES","SCARVES","GLOVES","BELTS","TIES","KEYCHAINS",
   "SUNGLASSES","OPTICAL_FRAMES",
+
   "WATCHES","JEWELRY","RINGS","BRACELETS","NECKLACES","EARRINGS",
 
   "FRAGRANCES","SKINCARE","HAIR","MAKEUP",
@@ -215,40 +225,114 @@ const ALLOWED_TYPES = new Set([
   "KIDS","PETS","HOME","DECOR","OTHER",
 ]);
 
+const FOOTWEAR_TYPES = new Set([
+  "SNEAKERS","SHOES","BOOTS","CHELSEA_BOOTS","HIKING_BOOTS","LOAFERS","DERBIES","OXFORDS",
+  "HEELS","FLATS","MULES","CLOGS","ESPADRILLES","SANDALS","SLIDES",
+]);
+
 const CATEGORY_ALIASES = {
+  // tops
   TSHIRT: "TSHIRTS",
   T_SHIRT: "TSHIRTS",
   "T-SHIRT": "TSHIRTS",
   TEE: "TSHIRTS",
   TEES: "TSHIRTS",
   "T-SHIRTS": "TSHIRTS",
+
   LONG_SLEEVE: "LONGSLEEVES",
-  LONGSLEEVE: "LONGSLEEVES",
   LONG_SLEEVES: "LONGSLEEVES",
+  LONGSLEEVE: "LONGSLEEVES",
+  "LONG-SLEEVE": "LONGSLEEVES",
+  LONG_SLEE: "LONGSLEEVES",
+  LONG_SLEEE: "LONGSLEEVES",
+  LONG_SLEEVED: "LONGSLEEVES",
+
   HOODIE: "HOODIES",
+  HOODIES: "HOODIES",
   SWEATSHIRT: "SWEATSHIRTS",
+  SWEATSHIRTS: "SWEATSHIRTS",
   CREWNECK: "SWEATSHIRTS",
+
+  // bottoms
   PANT: "PANTS",
+  PANTS: "PANTS",
   TROUSERS: "PANTS",
   JOGGER: "JOGGERS",
+  JOGGERS: "JOGGERS",
   SWEATPANTS: "SWEATPANTS",
   JEAN: "JEANS",
+  JEANS: "JEANS",
   DENIM: "JEANS",
+
+  // footwear
   SNEAKER: "SNEAKERS",
+  SNEAKERS: "SNEAKERS",
   SHOE: "SHOES",
+  SHOES: "SHOES",
   BOOT: "BOOTS",
+  BOOTS: "BOOTS",
+  SANDAL: "SANDALS",
+  SANDALS: "SANDALS",
+
+  // bags / small leather
   BAG: "BAGS",
+  BAGS: "BAGS",
   BACKPACK: "BACKPACKS",
+  BACKPACKS: "BACKPACKS",
   WALLET: "WALLETS",
+  WALLETS: "WALLETS",
   CARDHOLDER: "CARDHOLDERS",
+  CARDHOLDERS: "CARDHOLDERS",
+
+  // accessories
   SUNGLASS: "SUNGLASSES",
+  SUNGLASSES: "SUNGLASSES",
   GLASS: "SUNGLASSES",
   BELT: "BELTS",
+  BELTS: "BELTS",
   HAT: "HATS",
+  HATS: "HATS",
   CAP: "CAPS",
+  CAPS: "CAPS",
   BEANIE: "BEANIES",
+  BEANIES: "BEANIES",
+
+  // dresses/skirts
+  DRESS: "DRESSES",
+  DRESSES: "DRESSES",
+  SKIRT: "SKIRTS",
+  SKIRTS: "SKIRTS",
+
+  // fragrance
   PERFUME: "FRAGRANCES",
-  PARFUM: "FRAGRANCES",
+  PERFUMES: "FRAGRANCES",
+  FRAGRANCE: "FRAGRANCES",
+  FRAGRANCES: "FRAGRANCES",
+
+  // knit / sweaters
+  SWEATER: "SWEATERS",
+  SWEATERS: "SWEATERS",
+  PULLOVER: "SWEATERS",
+  PULLOVERS: "SWEATERS",
+  JUMPER: "SWEATERS",
+  JUMPERS: "SWEATERS",
+  TURTLENECK: "SWEATERS",
+  TURTLENECKS: "SWEATERS",
+  MOCKNECK: "SWEATERS",
+  MOCKNECKS: "SWEATERS",
+  KNIT: "KNITWEAR",
+  KNITS: "KNITWEAR",
+  KNITTED: "KNITWEAR",
+  KNITWEAR: "KNITWEAR",
+  CARDIGAN: "CARDIGANS",
+  CARDIGANS: "CARDIGANS",
+
+  // scarves
+  SCARF: "SCARVES",
+  SCARFS: "SCARVES",
+  SCARVES: "SCARVES",
+  SHAWL: "SCARVES",
+  SHAWLS: "SCARVES",
 };
 
 function canonicalizeCategory(raw) {
@@ -260,45 +344,59 @@ function canonicalizeCategory(raw) {
   return s;
 }
 
-// Title-based detector (cheap)
+// Title/page-text based detector (cheap)
 function detectProductTypeFromTitle(titleRaw) {
   const t = normalizeForMatch(titleRaw);
 
   const rules = [
+    // Accessories first
+    { type: "SCARVES", re: /\bscarf(s)?\b|\bshawl(s)?\b|\bfoulard\b|\bsciarpa\b|\b围巾\b/ },
+
+    // Knit / sweaters
+    { type: "CARDIGANS", re: /\bcardigan(s)?\b/ },
+    { type: "KNITWEAR", re: /\bknit\s*wear\b|\bknitted\b|\bmaglia\b|\btricot\b/ },
+    { type: "SWEATERS", re: /\bsweater(s)?\b|\bjumper(s)?\b|\bpullover(s)?\b|\bmaglione\b|\bpull\b/ },
+
+    // Fragrance
     { type: "FRAGRANCES", re: /\bperfume\b|\bparfum\b|\bfragrance\b|\bcologne\b|\beau de\b|\bprofumo\b/ },
 
+    // Tops
     { type: "HOODIES", re: /\bhoodie(s)?\b|\bhooded\b|\bfelpa con cappuccio\b|\b卫衣\b/ },
     { type: "SWEATSHIRTS", re: /\bsweatshirt(s)?\b|\bcrewneck\b|\bgirocollo\b|\bfelpa\b/ },
-    { type: "SWEATPANTS", re: /\bsweatpants\b|\bpantaloni tuta\b|\bjogger pants\b/ },
-    { type: "JOGGERS", re: /\bjoggers?\b|\bpantaloni jogger\b/ },
+
+    // LONGSLEEVE
+    { type: "LONGSLEEVES", re: /\blong[-\s]*slee+v?e\b|\bl\/s\b|\bls\s*tee\b|\blong\s*sleeve\b|\b长袖\b/ },
 
     { type: "TSHIRTS", re: /\bt\s*-\s*shirt\b|\bt\s*shirt\b|\btshirt\b|\btee\b|\bmaglietta\b|\b短袖\b/ },
-    { type: "LONGSLEEVES", re: /\blong\s*sleeve\b|\b长袖\b/ },
     { type: "SHIRTS", re: /\bshirt(s)?\b|\bbutton\s*up\b|\bcamicia\b/ },
     { type: "POLOS", re: /\bpolo(s)?\b/ },
 
-    { type: "JEANS", re: /\bjeans\b|\bdenim\b|\b牛仔\b/ },
+    // Bottoms
+    { type: "JEANS", re: /\bjeans\b|\bdenim\b|\bjean\b|\b牛仔\b/ },
     { type: "SHORTS", re: /\bshort(s)?\b|\bbermuda\b/ },
     { type: "PANTS", re: /\btrousers?\b|\bpants\b|\bpantaloni\b|\b裤\b/ },
+    { type: "SWEATPANTS", re: /\bsweatpants\b|\bpantaloni tuta\b/ },
+    { type: "JOGGERS", re: /\bjoggers?\b|\bpantaloni jogger\b/ },
 
+    // Outerwear
     { type: "JACKETS", re: /\bjacket(s)?\b|\bgiacca\b|\b外套\b/ },
     { type: "PUFFERS", re: /\bpuffer\b|\bdown\s*jacket\b|\bpiumino\b/ },
     { type: "COATS", re: /\bcoat(s)?\b|\bcappotto\b/ },
 
+    // Footwear
     { type: "SLIDES", re: /\bslides?\b|\bciabatt(e|a)\b/ },
     { type: "SANDALS", re: /\bsandals?\b|\bflip\s*flops?\b/ },
-    { type: "SNEAKERS", re: /\bsneakers?\b|\btrainers?\b|\b运动鞋\b/ },
+    { type: "SNEAKERS", re: /\bsneakers?\b|\btrainers?\b|\bscarpe da ginnastica\b|\b运动鞋\b/ },
     { type: "BOOTS", re: /\bboots?\b|\bstivali\b/ },
     { type: "SHOES", re: /\bshoes?\b|\bscarpe\b|\b皮鞋\b/ },
 
+    // Bags / small leather / headwear
     { type: "BAGS", re: /\bbag(s)?\b|\bborsa\b|\b包\b/ },
     { type: "WALLETS", re: /\bwallet(s)?\b|\bportafoglio\b/ },
     { type: "BELTS", re: /\bbelt(s)?\b|\bcintura\b/ },
-
     { type: "HATS", re: /\bhat(s)?\b|\bcappello\b/ },
     { type: "CAPS", re: /\bcap(s)?\b|\bbaseball\s*cap\b/ },
     { type: "BEANIES", re: /\bbeanie(s)?\b|\bberretto\b/ },
-
     { type: "SUNGLASSES", re: /\bsunglass(es)?\b|\bshades\b|\bocchiali da sole\b/ },
     { type: "WATCHES", re: /\bwatch(es)?\b|\borologio\b/ },
   ];
@@ -308,7 +406,7 @@ function detectProductTypeFromTitle(titleRaw) {
 }
 
 // =====================================================
-// Cache (disk) — key: imageKey/url + referer origin -> {category, confidence, ...}
+// Cache (disk) — key -> {category, confidence, ...}
 // =====================================================
 function loadCache() {
   const abs = absPathFromRoot(CORRECTOR_CACHE_FILE);
@@ -490,6 +588,125 @@ async function fetchAlbumFallbackImages(context, albumUrl) {
     return dedupePreserveOrder(out.map((x) => fixPhotoDoubleHost(toHttpsUrl(x))));
   } catch {
     return [];
+  }
+}
+
+// =====================================================
+// NEW: Page-hint da pagina album (colonna Q)
+// =====================================================
+function stripTags(s) {
+  return String(s || "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pickMeta(html, nameOrProp) {
+  const re = new RegExp(
+    `<meta[^>]+(?:name|property)=["']${nameOrProp}["'][^>]+content=["']([^"']+)["']`,
+    "i"
+  );
+  const m = html.match(re);
+  return m?.[1] ? stripTags(m[1]) : "";
+}
+
+function pickTitle(html) {
+  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return m?.[1] ? stripTags(m[1]) : "";
+}
+
+function pickBreadcrumbTexts(html) {
+  const out = [];
+  const re = /<a[^>]+href=["'][^"']*\/categories\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    const txt = stripTags(m[1]);
+    if (txt && txt.length <= 60) out.push(txt);
+  }
+  return dedupePreserveOrder(out);
+}
+
+function pickJsonCategoryNames(html) {
+  const out = [];
+  const res = [
+    /"categoryName"\s*:\s*"([^"]{1,80})"/g,
+    /"cateName"\s*:\s*"([^"]{1,80})"/g,
+    /"category"\s*:\s*"([^"]{1,80})"/g,
+  ];
+  for (const re of res) {
+    let m;
+    while ((m = re.exec(html))) {
+      const txt = stripTags(m[1]);
+      if (txt && txt.length <= 80) out.push(txt);
+    }
+  }
+  return dedupePreserveOrder(out);
+}
+
+function makePageCacheKey(albumUrl) {
+  // mettiamo anche origin per evitare collisioni strane
+  try {
+    const u = new URL(toHttpsUrl(albumUrl));
+    return `page::${u.origin}${u.pathname}`.toLowerCase();
+  } catch {
+    return `page::${String(albumUrl || "").trim().toLowerCase()}`;
+  }
+}
+
+async function detectCategoryFromAlbumPage(context, albumUrl) {
+  const album = toHttpsUrl(albumUrl);
+  if (!album) return { category: "OTHER", confidence: 0, reason: "NO_ALBUM_URL" };
+
+  const pageKey = makePageCacheKey(album);
+  const cached = getCache(pageKey);
+  if (cached && cached.category && typeof cached.confidence === "number") {
+    return { category: cached.category, confidence: cached.confidence, reason: "PAGE_CACHED" };
+  }
+
+  const headers = {
+    "user-agent": REAL_UA,
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "accept-language": ACCEPT_LANG,
+  };
+
+  try {
+    const res = await context.request.get(album, { timeout: 25000, maxRedirects: 6, headers });
+    if (!res.ok()) return { category: "OTHER", confidence: 0, reason: `PAGE_HTTP_${res.status()}` };
+
+    const html = await res.text();
+
+    const title = pickTitle(html);
+    const ogTitle = pickMeta(html, "og:title");
+    const keywords = pickMeta(html, "keywords");
+    const desc = pickMeta(html, "description");
+    const crumbs = pickBreadcrumbTexts(html);
+    const jsonCats = pickJsonCategoryNames(html);
+
+    const parts = [ogTitle, title, keywords, desc, ...crumbs, ...jsonCats].filter(Boolean);
+    const text = parts.join(" | ").slice(0, 900);
+
+    if (!text) return { category: "OTHER", confidence: 0, reason: "PAGE_EMPTY" };
+
+    // conf euristica: breadcrumb/json > keywords/meta > title
+    let conf = 0.62;
+    if (crumbs.length) conf = 0.82;
+    else if (jsonCats.length) conf = 0.78;
+    else if (keywords || ogTitle) conf = 0.70;
+
+    const cat = detectProductTypeFromTitle(text);
+    if (cat && cat !== "OTHER" && ALLOWED_TYPES.has(cat)) {
+      const result = { category: cat, confidence: conf };
+      setCache(pageKey, result); // ✅ cache positiva page-hint
+      return { ...result, reason: "PAGE_HINT" };
+    }
+
+    // cache “neutro” (no-match) per evitare refetch continuo
+    setCache(pageKey, { category: "OTHER", confidence: 0.0 });
+    return { category: "OTHER", confidence: 0, reason: "PAGE_HINT_NO_MATCH" };
+  } catch (e) {
+    return { category: "OTHER", confidence: 0, reason: "PAGE_ERR", err: String(e?.message || e) };
   }
 }
 
@@ -812,10 +1029,9 @@ async function main() {
           for (const part of extra.split(",").map((x) => x.trim()).filter(Boolean)) imgs.push(part);
         }
 
-        // ✅ NON tagliare qui: limiteremo solo i tentativi con fetch OK
         let candidates = dedupePreserveOrder(imgs);
 
-        const referer = String(row[16] || "").trim(); // yupoo_url if present
+        const referer = String(row[16] || "").trim(); // yupoo_url (col Q)
 
         try {
           // 1) Title hint first (no tokens)
@@ -836,13 +1052,33 @@ async function main() {
             }
           }
 
+          // 2) ✅ NEW: Page-hint dalla pagina Yupoo (col Q) prima dell'AI
+          if (CORRECTOR_USE_PAGE_HINT_FIRST && referer) {
+            const ph = await detectCategoryFromAlbumPage(context, referer);
+            if (ph.category !== "OTHER" && ph.confidence >= CORRECTOR_PAGE_HINT_MIN_CONF) {
+              const newTitle = buildNewTitle(brand, ph.category, title);
+              pendingUpdates.push({
+                range: `${sheetA1Tab(SHEET_TAB)}!C${rowNum}:E${rowNum}`,
+                values: [[newTitle, row[3] || "", ph.category]],
+              });
+              changedCount++;
+              console.log(
+                `✅ row ${rowNum} | ${brand || "-"} | OTHER -> ${ph.category} (page-hint conf=${ph.confidence.toFixed(
+                  2
+                )}) | "${title}" -> "${newTitle}"`
+              );
+              await flushNow(false);
+              continue;
+            }
+          }
+
           if (!openai) {
             noChangeCount++;
             console.log(`↩️ row ${rowNum} no-change | AI OFF | "${title}"`);
             continue;
           }
 
-          // 2) AI multi-image fallback (pass1 low -> pass2 auto)
+          // 3) AI multi-image fallback (pass1 low -> pass2 auto)
           let best = { category: "OTHER", confidence: 0, used: "", reason: "" };
           let addedAlbumFallback = false;
 
@@ -876,7 +1112,7 @@ async function main() {
               if (okAttempts >= CORRECTOR_MAX_IMAGES_TO_TRY) break;
             }
 
-            // ✅ se non siamo riusciti a processare nulla (tutti fetch fail),
+            // se non siamo riusciti a processare nulla (tutti fetch fail),
             // prova fallback da pagina album (referer) e ripeti lo stesso pass
             if (!addedAlbumFallback && referer && best.category === "OTHER" && best.confidence === 0) {
               const fb = await fetchAlbumFallbackImages(context, referer);

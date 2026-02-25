@@ -1,5 +1,3 @@
-cd ~/Desktop/cravatta-app-optimized
-cat > run-corrector.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -37,6 +35,3 @@ echo
 echo "🚀 FULL RUN (headless) ..."
 CORRECTOR_HEADFUL=0 CORRECTOR_DRY_RUN=0 CORRECTOR_LIMIT=0 \
 node "$SCRIPT"
-EOF
-
-chmod +x run-corrector.sh

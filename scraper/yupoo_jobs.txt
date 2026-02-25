@@ -1,7 +1,86 @@
-https://yishan-ess.x.yupoo.com/categories/4937694|seller=YISHAN|brand=FOG|category=TSHIRTS|maxPages=0|ai=0|shoeName=0
-https://yishan-ess.x.yupoo.com/categories/4937697|seller=YISHAN|brand=FOG|category=LONGSLEEVES|maxPages=0|ai=0|shoeName=0
-https://yishan-ess.x.yupoo.com/categories/4937696|seller=YISHAN|brand=FOG|category=SHORTS|maxPages=0|ai=0|shoeName=0
-https://yishan-ess.x.yupoo.com/categories/4937691|seller=YISHAN|brand=FOG|category=HOODIES|maxPages=0|ai=0|shoeName=0
-https://yishan-ess.x.yupoo.com/categories/4937698|seller=YISHAN|brand=FOG|category=SWEATPANTS|maxPages=0|ai=0|shoeName=0
-https://yishan-ess.x.yupoo.com/categories/4937712|seller=YISHAN|brand=FOG|category=SWEATERS|maxPages=0|ai=0|shoeName=0
-https://yishan-ess.x.yupoo.com/categories/4937700|seller=YISHAN|brand=FOG|category=SWEATSHIRTS|maxPages=0|ai=0|shoeName=0
+# ===== LADY-MIA | TSHIRTS =====
+https://lady-mia.x.yupoo.com/categories/789328?isSubCate=true|seller=LADY-MIA|brand=LOUIS VUITTON|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789329?isSubCate=true|seller=LADY-MIA|brand=BALENCIAGA|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789330?isSubCate=true|seller=LADY-MIA|brand=BURBERRY|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789331?isSubCate=true|seller=LADY-MIA|brand=DIOR|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789332?isSubCate=true|seller=LADY-MIA|brand=MIUMIU|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789338?isSubCate=true|seller=LADY-MIA|brand=RALPH LAUREN|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789339?isSubCate=true|seller=LADY-MIA|brand=PRADA|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789499?isSubCate=true|seller=LADY-MIA|brand=AMI|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789500?isSubCate=true|seller=LADY-MIA|brand=GUCCI|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789501?isSubCate=true|seller=LADY-MIA|brand=MONCLER|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789502?isSubCate=true|seller=LADY-MIA|brand=FENDI|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789513?isSubCate=true|seller=LADY-MIA|brand=MAISON MARGIELA|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/789519?isSubCate=true|seller=LADY-MIA|brand=CELINE|category=TSHIRTS|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | HOODIES =====
+https://lady-mia.x.yupoo.com/categories/732641?isSubCate=true|seller=LADY-MIA|brand=LOUIS VUITTON|category=HOODIES|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732656?isSubCate=true|seller=LADY-MIA|brand=BALENCIAGA|category=HOODIES|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732686?isSubCate=true|seller=LADY-MIA|brand=DIOR|category=HOODIES|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732671?isSubCate=true|seller=LADY-MIA|brand=ACNE STUDIO|category=HOODIES|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732677?isSubCate=true|seller=LADY-MIA|brand=BURBERRY|category=HOODIES|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732691?isSubCate=true|seller=LADY-MIA|brand=CHROME HEARTS|category=HOODIES|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | JACKETS =====
+https://lady-mia.x.yupoo.com/categories/732804?isSubCate=true|seller=LADY-MIA|brand=LOUIS VUITTON|category=JACKETS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732823?isSubCate=true|seller=LADY-MIA|brand=PRADA|category=JACKETS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732859?isSubCate=true|seller=LADY-MIA|brand=RALPH LAUREN|category=JACKETS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732867?isSubCate=true|seller=LADY-MIA|brand=TNF|category=JACKETS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/768222?isSubCate=true|seller=LADY-MIA|brand=PATAGONIA|category=JACKETS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732827?isSubCate=true|seller=LADY-MIA|brand=BALENCIAGA|category=JACKETS|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | SWEATERS =====
+https://lady-mia.x.yupoo.com/categories/732873?isSubCate=true|seller=LADY-MIA|brand=LOUIS VUITTON|category=SWEATERS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/732876?isSubCate=true|seller=LADY-MIA|brand=DIOR|category=SWEATERS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/733212?isSubCate=true|seller=LADY-MIA|brand=RALPH LAUREN|category=SWEATERS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/785939?isSubCate=true|seller=LADY-MIA|brand=AMI|category=SWEATERS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/785941?isSubCate=true|seller=LADY-MIA|brand=CELINE|category=SWEATERS|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | PANTS =====
+https://lady-mia.x.yupoo.com/categories/733216?isSubCate=true|seller=LADY-MIA|brand=LOUIS VUITTON|category=PANTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/733239?isSubCate=true|seller=LADY-MIA|brand=BALENCIAGA|category=PANTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/733259?isSubCate=true|seller=LADY-MIA|brand=PRADA|category=PANTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/733256?isSubCate=true|seller=LADY-MIA|brand=ACNE STUDIO|category=PANTS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/733267?isSubCate=true|seller=LADY-MIA|brand=CHROME HEARTS|category=PANTS|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | SNEAKERS =====
+https://lady-mia.x.yupoo.com/categories/4958446|seller=LADY-MIA|brand=LOUIS VUITTON|category=SNEAKERS|maxPages=0|ai=auto|shoeName=auto|title=LOUIS VUITTON TRAINER
+https://lady-mia.x.yupoo.com/categories/4880862|seller=LADY-MIA|brand=LOUIS VUITTON|category=SNEAKERS|maxPages=0|ai=auto|shoeName=auto|title=LOUIS VUITTON SKATE
+
+# ===== LADY-MIA | COATS (DOWN JACKETS) =====
+https://lady-mia.x.yupoo.com/categories/731917?isSubCate=true|seller=LADY-MIA|brand=MONCLER|category=COATS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/731919?isSubCate=true|seller=LADY-MIA|brand=TNF|category=COATS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/731921?isSubCate=true|seller=LADY-MIA|brand=CANADA GOOSE|category=COATS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/731929?isSubCate=true|seller=LADY-MIA|brand=DIOR|category=COATS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/731934?isSubCate=true|seller=LADY-MIA|brand=BURBERRY|category=COATS|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | BAGS =====
+https://lady-mia.x.yupoo.com/categories/538447?isSubCate=true|seller=LADY-MIA|brand=LOUIS VUITTON|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538448?isSubCate=true|seller=LADY-MIA|brand=HERMES|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538450?isSubCate=true|seller=LADY-MIA|brand=DIOR|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538451?isSubCate=true|seller=LADY-MIA|brand=GUCCI|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538453?isSubCate=true|seller=LADY-MIA|brand=CHANEL|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538454?isSubCate=true|seller=LADY-MIA|brand=GOYARD|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538455?isSubCate=true|seller=LADY-MIA|brand=CELINE|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538457?isSubCate=true|seller=LADY-MIA|brand=YSL|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538457?isSubCate=true|seller=LADY-MIA|brand=PRADA|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538460?isSubCate=true|seller=LADY-MIA|brand=COACH|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/538517?isSubCate=true|seller=LADY-MIA|brand=BALENCIAGA|category=BAGS|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | SUNGLASSES (GLASSES) =====
+https://lady-mia.x.yupoo.com/categories/4832270|seller=LADY-MIA|brand=AUTO|category=SUNGLASSES|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | CAPS (CAP) =====
+https://lady-mia.x.yupoo.com/categories/4833375|seller=LADY-MIA|brand=AUTO|category=CAPS|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | JEWELRY (JEWERLY) =====
+https://lady-mia.x.yupoo.com/categories/5113890|seller=LADY-MIA|brand=AUTO|category=JEWELRY|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/4848518|seller=LADY-MIA|brand=AUTO|category=JEWELRY|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/4848517|seller=LADY-MIA|brand=AUTO|category=JEWELRY|maxPages=0|ai=auto|shoeName=auto
+https://lady-mia.x.yupoo.com/categories/4848520|seller=LADY-MIA|brand=AUTO|category=JEWELRY|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | BELTS (BELT) =====
+https://lady-mia.x.yupoo.com/categories/4832277|seller=LADY-MIA|brand=AUTO|category=BELTS|maxPages=0|ai=auto|shoeName=auto
+
+# ===== LADY-MIA | SCARVES (SCARF) =====
+https://lady-mia.x.yupoo.com/categories/4832278|seller=LADY-MIA|brand=AUTO|category=SCARVES|maxPages=0|ai=auto|shoeName=auto
