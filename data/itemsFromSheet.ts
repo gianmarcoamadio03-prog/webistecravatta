@@ -6,10 +6,9 @@ import { google } from "googleapis";
 import fs from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import { normalizeSlug } from "../src/lib/slug";
-import { unstable_cache } from "next/cache";
 
 export type SheetItem = {
-  rowNumber: number; // ✅ posizione nel foglio
+  rowNumber: number;
 
   id: string;
   slug: string;
@@ -19,16 +18,41 @@ export type SheetItem = {
   category: string;
   seller: string;
 
-  images: string[];
+  images: string[]; // list-mode: solo [cover]; full-mode: cover + altre
   cover: string;
 
   source_url: string;
   source_price_cny: string;
 
   tags: string[];
-
   price_eur: number | null;
 };
+
+export type Facets = {
+  brands: string[];
+  categories: string[];
+  sellers: string[];
+};
+
+type PageResult = {
+  items: SheetItem[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+};
+
+type MetaRow = {
+  rowNumber: number;
+  id: string;
+  slug: string;
+  title: string;
+  brand: string;
+  category: string;
+  seller: string;
+};
+
+type ParseMode = "list" | "full";
 
 const REVALIDATE_SECONDS = (() => {
   const n = Number(process.env.HOME_SHOWCASE_REVALIDATE || "600");
@@ -40,7 +64,12 @@ const TAB = (process.env.SHEET_TAB || "items").trim();
 
 const TTL_MS = () => REVALIDATE_SECONDS * 1000;
 
-/** ---------- small utils ---------- */
+// ✅ per evitare payload “giganti” in FULL
+const MAX_FULL_IMAGES = Number(process.env.MAX_ITEM_IMAGES || "36") || 36;
+
+function clamp(n: number, a: number, b: number) {
+  return Math.max(a, Math.min(b, n));
+}
 
 function slugify(input: string) {
   const s = (input ?? "").toString().trim().toLowerCase();
@@ -74,22 +103,37 @@ function normalizeHttp(u: string) {
   return s;
 }
 
-/** ---------- Next persistent cache helpers ---------- */
+/** ✅ blocca VIDEO che a volte finiscono in cover/images (es: .mp4) */
+function isLikelyImageUrl(u: string) {
+  const s = String(u || "").trim();
+  if (!s) return false;
+  const low = s.toLowerCase();
 
-function stableStringify(obj: any): string {
-  if (obj === null || obj === undefined) return String(obj);
-  const t = typeof obj;
-  if (t !== "object") return JSON.stringify(obj);
-  if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(",")}]`;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
+  // ❌ video
+  if (/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(low)) return false;
+
+  // ✅ immagini classiche
+  if (/\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(low)) return true;
+
+  // ✅ yupoo size endpoints
+  if (
+    low.includes("/big.") ||
+    low.includes("/small.") ||
+    low.includes("/medium.") ||
+    low.includes("/thumb.")
+  ) return true;
+
+  // ✅ fallback “soft”: se è yupoo photo ma non è video, lo teniamo
+  try {
+    const uu = new URL(normalizeHttp(s));
+    const host = (uu.hostname || "").toLowerCase();
+    if (host.includes("photo.yupoo.com")) return true;
+  } catch {}
+
+  return false;
 }
 
-function hash36(input: string) {
-  let h = 5381;
-  for (let i = 0; i < input.length; i++) h = ((h << 5) + h) ^ input.charCodeAt(i);
-  return (h >>> 0).toString(36);
-}
+/* ---------------- retry/backoff ---------------- */
 
 async function withBackoff<T>(fn: () => Promise<T>, _label: string, tries = 3): Promise<T> {
   let lastErr: any;
@@ -116,16 +160,50 @@ async function withBackoff<T>(fn: () => Promise<T>, _label: string, tries = 3): 
   throw lastErr;
 }
 
-const CACHE_PREFIX = `sheet:${SHEET_ID || "noid"}:${TAB || "items"}`;
+/* ---------------- global in-memory caches ---------------- */
 
-// FX rate cache (evita richieste ripetute)
-const getCnyToEurRateCached = unstable_cache(
-  async () => getCnyToEurRate(),
-  [`${CACHE_PREFIX}:fx:cnyeur:v1`],
-  { revalidate: 60 * 60 } // 1 ora
-);
+type CacheEntry<T> = { at: number; data: T };
 
-/** --------- Yupoo image helpers (dedupe smart) --------- */
+function g<T = any>() {
+  return globalThis as any as T;
+}
+
+function isFresh(at: number, ttl: number) {
+  return Date.now() - at < ttl;
+}
+
+function getMetaCache(): CacheEntry<{ rows: MetaRow[]; facets: Facets }> | null {
+  return (g() as any).__CRAVATTA_META_CACHE ?? null;
+}
+function setMetaCache(v: CacheEntry<{ rows: MetaRow[]; facets: Facets }>) {
+  (g() as any).__CRAVATTA_META_CACHE = v;
+}
+
+function getFxCache(): CacheEntry<number> | null {
+  return (g() as any).__CRAVATTA_FX_CACHE ?? null;
+}
+function setFxCache(v: CacheEntry<number>) {
+  (g() as any).__CRAVATTA_FX_CACHE = v;
+}
+
+function rowListCache(): Map<number, CacheEntry<SheetItem>> {
+  const gg: any = g();
+  if (!gg.__CRAVATTA_ROW_LIST_CACHE) gg.__CRAVATTA_ROW_LIST_CACHE = new Map();
+  return gg.__CRAVATTA_ROW_LIST_CACHE as Map<number, CacheEntry<SheetItem>>;
+}
+function rowFullCache(): Map<number, CacheEntry<SheetItem>> {
+  const gg: any = g();
+  if (!gg.__CRAVATTA_ROW_FULL_CACHE) gg.__CRAVATTA_ROW_FULL_CACHE = new Map();
+  return gg.__CRAVATTA_ROW_FULL_CACHE as Map<number, CacheEntry<SheetItem>>;
+}
+
+function shuffleCache(): Map<string, CacheEntry<number[]>> {
+  const gg: any = g();
+  if (!gg.__CRAVATTA_SHUFFLE_CACHE) gg.__CRAVATTA_SHUFFLE_CACHE = new Map();
+  return gg.__CRAVATTA_SHUFFLE_CACHE as Map<string, CacheEntry<number[]>>;
+}
+
+/* ---------------- yupoo helpers (dedupe smart) ---------------- */
 
 function yupooImageKey(url: string) {
   try {
@@ -171,15 +249,9 @@ function scoreImageUrl(u: string) {
   return sc;
 }
 
-/**
- * ✅ Dedupe immagini "smart":
- * - per photo.yupoo.com dedupe per key seller/hash (ignorando query e size)
- * - sceglie la versione migliore (big + query se presente)
- * - mantiene l'ordine della prima occorrenza
- */
 function uniqueKeepOrderImages(list: string[]) {
   const order: string[] = [];
-  const chosen = new Map<string, string>(); // key -> bestUrl
+  const chosen = new Map<string, string>();
 
   for (const raw of Array.isArray(list) ? list : []) {
     const v0 = String(raw || "").trim();
@@ -187,6 +259,9 @@ function uniqueKeepOrderImages(list: string[]) {
 
     const v = toBigYupooPhotoUrl(normalizeHttp(v0));
     if (!v) continue;
+
+    // ✅ filtra roba non immagine (es. mp4)
+    if (!isLikelyImageUrl(v)) continue;
 
     const key = yupooImageKey(v);
     const k = key ? `yupoo:${key}` : `url:${v.toLowerCase()}`;
@@ -203,7 +278,7 @@ function uniqueKeepOrderImages(list: string[]) {
   return order.map((k) => chosen.get(k)!).filter(Boolean);
 }
 
-/** ---------- parsing helpers ---------- */
+/* ---------------- parsing helpers ---------------- */
 
 function parseExtraImages(raw: string): string[] {
   const s = (raw || "").trim();
@@ -212,7 +287,8 @@ function parseExtraImages(raw: string): string[] {
   return urls
     .map(normalizeHttp)
     .map(toBigYupooPhotoUrl)
-    .filter((u) => u && !u.toLowerCase().includes("ci_play.png"));
+    .filter((u) => u && !u.toLowerCase().includes("ci_play.png"))
+    .filter(isLikelyImageUrl);
 }
 
 function parseTags(raw: string): string[] {
@@ -252,9 +328,6 @@ function uniqueSorted(list: string[]) {
   return out.sort((a, b) => a.localeCompare(b));
 }
 
-/**
- * fallback robusto: scansiona tutta la riga e prende solo URL "immagine"
- */
 function scanRowForImageUrls(row: string[]): string[] {
   const out: string[] = [];
   for (const cell of row) {
@@ -271,10 +344,14 @@ function scanRowForImageUrls(row: string[]): string[] {
         /\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(u) || low.includes("/big.");
 
       if (!looksLikeImage) continue;
+      if (!isLikelyImageUrl(u)) continue;
+
       out.push(u);
     }
   }
-  return uniqueKeepOrderImages(out);
+
+  // ✅ cap per sicurezza
+  return uniqueKeepOrderImages(out).slice(0, MAX_FULL_IMAGES);
 }
 
 function normLite(s: string) {
@@ -286,7 +363,7 @@ function normLite(s: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-/** ---------- deterministic shuffle ---------- */
+/* ---------------- deterministic shuffle + cache ---------------- */
 
 function seedFromString(str: string) {
   let h = 1779033703 ^ str.length;
@@ -329,7 +406,19 @@ function getBaseShuffleSeed() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-/** ---------- service account (ROBUST) ---------- */
+function getOrBuildShuffled(key: string, rowNumbers: number[]) {
+  const ttl = TTL_MS();
+  const sc = shuffleCache();
+  const cached = sc.get(key);
+  if (cached && isFresh(cached.at, ttl)) return cached.data;
+
+  const seed = seedFromString(key);
+  const data = shuffleInPlace([...rowNumbers], seed);
+  sc.set(key, { at: Date.now(), data });
+  return data;
+}
+
+/* ---------------- service account (robust) ---------------- */
 
 type ServiceAccount = { client_email: string; private_key: string };
 
@@ -352,13 +441,11 @@ async function readServiceAccount(): Promise<ServiceAccount> {
     process.env.GOOGLE_SERVICE_ACCOUNT?.trim() ||
     "";
 
-  // A) raw come path
   if (raw && (raw.startsWith("/") || raw.startsWith("."))) {
     const obj = await tryReadJsonFile(raw);
     if (obj?.client_email && obj?.private_key) return obj as ServiceAccount;
   }
 
-  // B) raw come JSON
   if (raw && raw.startsWith("{")) {
     try {
       const obj = JSON.parse(raw);
@@ -366,7 +453,6 @@ async function readServiceAccount(): Promise<ServiceAccount> {
     } catch {}
   }
 
-  // C) raw come base64(JSON)
   if (raw && !raw.startsWith("{") && !raw.startsWith("/") && !raw.startsWith(".")) {
     try {
       const decoded = Buffer.from(raw, "base64").toString("utf8");
@@ -377,20 +463,17 @@ async function readServiceAccount(): Promise<ServiceAccount> {
     } catch {}
   }
 
-  // D) GOOGLE_APPLICATION_CREDENTIALS path
   const gac = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
   if (gac) {
     const obj = await tryReadJsonFile(gac);
     if (obj?.client_email && obj?.private_key) return obj as ServiceAccount;
   }
 
-  // E) file standard nel repo
   for (const p of ["service-account.json", "scraper/service-account.json"]) {
     const obj = await tryReadJsonFile(p);
     if (obj?.client_email && obj?.private_key) return obj as ServiceAccount;
   }
 
-  // F) fallback env separati
   const client_email =
     process.env.GOOGLE_CLIENT_EMAIL?.trim() ||
     process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim() ||
@@ -401,9 +484,7 @@ async function readServiceAccount(): Promise<ServiceAccount> {
     process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim() ||
     "";
 
-  if (client_email && private_key) {
-    return { client_email, private_key };
-  }
+  if (client_email && private_key) return { client_email, private_key };
 
   throw new Error(
     "Missing Google credentials. Provide GOOGLE_SERVICE_ACCOUNT_JSON (JSON/path/base64) OR GOOGLE_APPLICATION_CREDENTIALS OR GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY."
@@ -416,7 +497,6 @@ let _sheets:
 
 async function getSheetsClient() {
   if (_sheets) return _sheets;
-
   if (!SHEET_ID) throw new Error("Missing SHEET_ID");
 
   const sa = await readServiceAccount();
@@ -434,54 +514,40 @@ async function getSheetsClient() {
   });
 
   const sheets = google.sheets({ version: "v4", auth });
-
   _sheets = { sheets, spreadsheetId: SHEET_ID, tab: TAB };
   return _sheets;
 }
 
-/** ---------- types ---------- */
+/* ---------------- FX cached (in-memory, 1h) ---------------- */
 
-type PageResult = {
-  items: SheetItem[];
-  page: number;
-  pageSize: number;
-  totalItems: number;
-  totalPages: number;
-};
+async function getCnyToEurRateCached(): Promise<number> {
+  const ttl = 60 * 60 * 1000;
+  const cached = getFxCache();
+  if (cached && isFresh(cached.at, ttl)) return cached.data;
 
-export type Facets = {
-  brands: string[];
-  categories: string[];
-  sellers: string[];
-};
+  // ✅ in-flight dedupe (anti burst)
+  const gg: any = g();
+  if (gg.__CRAVATTA_FX_INFLIGHT) return gg.__CRAVATTA_FX_INFLIGHT as Promise<number>;
 
-type MetaRow = {
-  rowNumber: number;
-  id: string;
-  slug: string;
-  title: string;
-  brand: string;
-  category: string;
-  seller: string;
-};
+  gg.__CRAVATTA_FX_INFLIGHT = (async () => {
+    const rate = await getCnyToEurRate();
+    setFxCache({ at: Date.now(), data: rate });
+    return rate;
+  })().finally(() => {
+    gg.__CRAVATTA_FX_INFLIGHT = null;
+  });
 
-/**
- * Parser “fixed columns” (A..T):
- * A id
- * B slug
- * C title
- * D brand
- * E category
- * F seller
- * G..N img1..img8
- * O img_extra
- * P status
- * Q yupoo_url
- * R source_url
- * S source_price_cny
- * T tags
- */
-function parseRowFixed(row: string[], rowNumber: number, cnyToEur: number): SheetItem | null {
+  return gg.__CRAVATTA_FX_INFLIGHT as Promise<number>;
+}
+
+/* ---------------- row parsing ---------------- */
+
+function parseRowFixed(
+  row: string[],
+  rowNumber: number,
+  cnyToEur: number,
+  mode: ParseMode
+): SheetItem | null {
   const title = String(row[2] ?? "").trim();
   const source_url = String(row[17] ?? "").trim();
 
@@ -495,24 +561,28 @@ function parseRowFixed(row: string[], rowNumber: number, cnyToEur: number): Shee
   const category = String(row[4] ?? "").trim();
   const seller = String(row[5] ?? "").trim();
 
-  // immagini base img1..img8 (G..N)
   const baseImages: string[] = [];
   for (let i = 6; i <= 13; i++) {
     const v = toBigYupooPhotoUrl(normalizeHttp(String(row[i] ?? "").trim()));
-    if (v) baseImages.push(v);
+    if (v && isLikelyImageUrl(v)) baseImages.push(v);
   }
 
   const extraImages = parseExtraImages(String(row[14] ?? ""));
-
   const headerImages = uniqueKeepOrderImages([...baseImages, ...extraImages]).filter((u) =>
     /^https?:\/\//i.test(u)
   );
 
-  const scannedImages = scanRowForImageUrls(row);
-  const imagesRaw = uniqueKeepOrderImages([...headerImages, ...scannedImages]);
+  const imagesRaw =
+    mode === "full"
+      ? uniqueKeepOrderImages([...headerImages, ...scanRowForImageUrls(row)])
+      : uniqueKeepOrderImages(headerImages);
 
   const cover = imagesRaw[0] || "";
-  const images = cover ? [cover, ...imagesRaw.slice(1)] : imagesRaw;
+
+  const images =
+    mode === "list"
+      ? (cover ? [cover] : [])
+      : (cover ? [cover, ...imagesRaw.slice(1)] : imagesRaw).slice(0, MAX_FULL_IMAGES);
 
   const source_price_cny = String(row[18] ?? "").trim();
   const priceCny = toNumberLoose(source_price_cny);
@@ -538,7 +608,12 @@ function parseRowFixed(row: string[], rowNumber: number, cnyToEur: number): Shee
   };
 }
 
-/** ---------- META (cached persistent) ---------- */
+function toListFromFull(full: SheetItem): SheetItem {
+  const cover = full.cover || full.images?.[0] || "";
+  return { ...full, cover, images: cover ? [cover] : [] };
+}
+
+/* ---------------- META (cached in-memory) ---------------- */
 
 async function _getMetaUncached(): Promise<{ rows: MetaRow[]; facets: Facets }> {
   const { sheets, spreadsheetId, tab } = await getSheetsClient();
@@ -550,7 +625,6 @@ async function _getMetaUncached(): Promise<{ rows: MetaRow[]; facets: Facets }> 
   );
 
   const values = (resp.data.values || []) as any[][];
-
   const rows: MetaRow[] = [];
   const brands: string[] = [];
   const categories: string[] = [];
@@ -585,15 +659,28 @@ async function _getMetaUncached(): Promise<{ rows: MetaRow[]; facets: Facets }> 
   return { rows, facets };
 }
 
-const getMetaCached = unstable_cache(
-  async () => _getMetaUncached(),
-  [`${CACHE_PREFIX}:meta:v2`],
-  { revalidate: REVALIDATE_SECONDS }
-);
-
 async function getMeta(): Promise<{ rows: MetaRow[]; facets: Facets }> {
-  return getMetaCached();
+  const ttl = TTL_MS();
+  const cached = getMetaCache();
+  if (cached && isFresh(cached.at, ttl)) return cached.data;
+
+  // ✅ in-flight dedupe (anti burst quando scade cache)
+  const gg: any = g();
+  if (gg.__CRAVATTA_META_INFLIGHT) return gg.__CRAVATTA_META_INFLIGHT as Promise<{ rows: MetaRow[]; facets: Facets }>;
+
+  gg.__CRAVATTA_META_INFLIGHT = _getMetaUncached()
+    .then((data) => {
+      setMetaCache({ at: Date.now(), data });
+      return data;
+    })
+    .finally(() => {
+      gg.__CRAVATTA_META_INFLIGHT = null;
+    });
+
+  return gg.__CRAVATTA_META_INFLIGHT as Promise<{ rows: MetaRow[]; facets: Facets }>;
 }
+
+/* ---------------- filters ---------------- */
 
 function filterRowNumbers(
   metaRows: MetaRow[],
@@ -623,33 +710,20 @@ function filterRowNumbers(
     .map((r) => r.rowNumber);
 }
 
-async function getShuffledRowNumbers(cacheKey: string, rowNumbers: number[]) {
-  // shuffle deterministico: caching non indispensabile, ma è leggero
-  const seed = seedFromString(cacheKey);
-  return shuffleInPlace([...rowNumbers], seed);
-}
+/* ---------------- fetch rows (batchGet, with row cache) ---------------- */
 
-async function getItemsCount(): Promise<number> {
-  // ✅ zero chiamate extra: count = meta.rows.length
-  const meta = await getMeta();
-  return meta.rows.length;
-}
-
-/** ---------- fetch rows (cached persistent) ---------- */
-
-async function _fetchItemsByRowNumbersUncached(rowNumbers: number[]): Promise<SheetItem[]> {
-  if (!rowNumbers.length) return [];
+async function batchFetchRows(rowNumbers: number[]) {
+  if (!rowNumbers.length) return new Map<number, string[]>();
 
   const { sheets, spreadsheetId, tab } = await getSheetsClient();
   const ranges = rowNumbers.map((rn) => `${tab}!A${rn}:T${rn}`);
 
   const resp = await withBackoff(
     () => sheets.spreadsheets.values.batchGet({ spreadsheetId, ranges }),
-    "fetchItemsByRowNumbers(batchGet)"
+    "fetchRows(batchGet)"
   );
 
-  const cnyToEur = await getCnyToEurRateCached();
-  const byRow = new Map<number, SheetItem>();
+  const out = new Map<number, string[]>();
 
   for (const vr of resp.data.valueRanges || []) {
     const range = String(vr.range || "");
@@ -660,35 +734,59 @@ async function _fetchItemsByRowNumbersUncached(rowNumbers: number[]): Promise<Sh
     const cells = Array.isArray(rawRow) ? rawRow.map((c) => String(c ?? "")) : [];
     while (cells.length < 20) cells.push("");
 
-    if (Number.isFinite(rowNumber)) {
-      const parsed = parseRowFixed(cells, rowNumber, cnyToEur);
-      if (parsed) byRow.set(rowNumber, parsed);
+    if (Number.isFinite(rowNumber)) out.set(rowNumber, cells);
+  }
+
+  return out;
+}
+
+async function fetchItemsByRowNumbers(rowNumbers: number[], mode: ParseMode): Promise<SheetItem[]> {
+  const ttl = TTL_MS();
+  const listC = rowListCache();
+  const fullC = rowFullCache();
+  const cache = mode === "full" ? fullC : listC;
+
+  const missing: number[] = [];
+  for (const rn of rowNumbers) {
+    const ce = cache.get(rn);
+    if (!ce || !isFresh(ce.at, ttl)) missing.push(rn);
+  }
+
+  if (missing.length) {
+    const rowsMap = await batchFetchRows(missing);
+    const cnyToEur = await getCnyToEurRateCached();
+
+    for (const rn of missing) {
+      const cells = rowsMap.get(rn);
+      if (!cells) continue;
+
+      if (mode === "full") {
+        const full = parseRowFixed(cells, rn, cnyToEur, "full");
+        if (full) {
+          fullC.set(rn, { at: Date.now(), data: full });
+          listC.set(rn, { at: Date.now(), data: toListFromFull(full) });
+        }
+      } else {
+        const list = parseRowFixed(cells, rn, cnyToEur, "list");
+        if (list) listC.set(rn, { at: Date.now(), data: list });
+      }
     }
   }
 
-  return rowNumbers.map((rn) => byRow.get(rn)).filter(Boolean) as SheetItem[];
+  const out: SheetItem[] = [];
+  for (const rn of rowNumbers) {
+    const ce = cache.get(rn);
+    if (ce && isFresh(ce.at, ttl)) out.push(ce.data);
+  }
+  return out;
 }
 
-async function fetchItemsByRowNumbers(rowNumbers: number[]): Promise<SheetItem[]> {
-  const keyPayload = stableStringify({ rows: rowNumbers });
-  const key = `${CACHE_PREFIX}:rows:v2:${hash36(keyPayload)}`;
-
-  const cachedFn = unstable_cache(
-    async () => _fetchItemsByRowNumbersUncached(rowNumbers),
-    [key],
-    { revalidate: REVALIDATE_SECONDS }
-  );
-
-  return cachedFn();
-}
-
-/** ---------- public APIs ---------- */
+/* ---------------- public APIs ---------------- */
 
 export async function getItemsPage(page: number, pageSize = 42): Promise<PageResult> {
   const p = Math.max(1, Math.floor(Number(page) || 1));
   const ps = Math.max(1, Math.floor(Number(pageSize) || 42));
 
-  // ✅ pagina deterministica "default": usa meta + batchGet per evitare range grossi
   const meta = await getMeta();
   const totalItems = meta.rows.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / ps));
@@ -697,15 +795,8 @@ export async function getItemsPage(page: number, pageSize = 42): Promise<PageRes
   const startIdx = (safePage - 1) * ps;
   const sliceRows = meta.rows.slice(startIdx, startIdx + ps).map((r) => r.rowNumber);
 
-  const items = await fetchItemsByRowNumbers(sliceRows);
-
-  return {
-    items,
-    page: safePage,
-    pageSize: ps,
-    totalItems,
-    totalPages,
-  };
+  const items = await fetchItemsByRowNumbers(sliceRows, "list");
+  return { items, page: safePage, pageSize: ps, totalItems, totalPages };
 }
 
 export async function getSpreadsheetPage(
@@ -732,47 +823,31 @@ export async function getSpreadsheetPage(
   const baseSeed = (opts?.seed || "").trim() || getBaseShuffleSeed();
   const filterSeedKey = `${baseSeed}|b=${brand}|c=${category}|s=${seller}|q=${q}`;
 
-  // ✅ cache persistent per l'intera pagina/filtri/seed
-  const cacheKey = `${CACHE_PREFIX}:sp:v3:${hash36(
-    stableStringify({ order, p, ps, filterSeedKey })
-  )}`;
+  const meta = await getMeta();
+  const allFacets = meta.facets;
 
-  const cachedFn = unstable_cache(
-    async () => {
-      const meta = await getMeta();
-      const allFacets = meta.facets;
+  const filteredRowNumbers = filterRowNumbers(meta.rows, { q, brand, category, seller });
+  const orderedRowNumbers =
+    order === "default" ? filteredRowNumbers : getOrBuildShuffled(filterSeedKey, filteredRowNumbers);
 
-      const filteredRowNumbers = filterRowNumbers(meta.rows, { q, brand, category, seller });
+  const totalItems = orderedRowNumbers.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / ps));
+  const safePage = clamp(p, 1, totalPages);
 
-      const orderedRowNumbers =
-        order === "default"
-          ? filteredRowNumbers
-          : await getShuffledRowNumbers(filterSeedKey, filteredRowNumbers);
+  const startIdx = (safePage - 1) * ps;
+  const slice = orderedRowNumbers.slice(startIdx, startIdx + ps);
 
-      const totalItems = orderedRowNumbers.length;
-      const totalPages = Math.max(1, Math.ceil(totalItems / ps));
-      const safePage = Math.min(p, totalPages);
+  const items = await fetchItemsByRowNumbers(slice, "list");
 
-      const startIdx = (safePage - 1) * ps;
-      const slice = orderedRowNumbers.slice(startIdx, startIdx + ps);
-
-      const items = await fetchItemsByRowNumbers(slice);
-
-      return {
-        items,
-        page: safePage,
-        pageSize: ps,
-        totalItems,
-        totalPages,
-        facets: allFacets,
-        order,
-      };
-    },
-    [cacheKey],
-    { revalidate: REVALIDATE_SECONDS }
-  );
-
-  return cachedFn();
+  return {
+    items,
+    page: safePage,
+    pageSize: ps,
+    totalItems,
+    totalPages,
+    facets: allFacets,
+    order,
+  };
 }
 
 export async function getItemsPreview(limit = 18): Promise<SheetItem[]> {
@@ -786,6 +861,8 @@ export async function getItemsHead(limit = 120): Promise<SheetItem[]> {
   const res = await getItemsPage(1, ps);
   return res.items;
 }
+
+/* ---------------- item lookup (FULL mode) ---------------- */
 
 type ItemIndex = {
   ts: number;
@@ -830,17 +907,20 @@ export async function getItemBySlugOrId(slugOrId: string): Promise<SheetItem | n
 
   if (!rowNumber) return null;
 
-  const items = await fetchItemsByRowNumbers([rowNumber]);
+  const items = await fetchItemsByRowNumbers([rowNumber], "full");
   return items[0] || null;
 }
 
-export async function getItemsFromSheet(): Promise<SheetItem[]> {
-  const total = await getItemsCount();
-  const HARD_CAP = Number(process.env.MAX_LOAD_ALL_ITEMS || "5000");
+/* ---------------- safety API (rarely used) ---------------- */
 
+export async function getItemsFromSheet(): Promise<SheetItem[]> {
+  const meta = await getMeta();
+  const total = meta.rows.length;
+
+  const HARD_CAP = Number(process.env.MAX_LOAD_ALL_ITEMS || "5000");
   if (total > HARD_CAP) {
     throw new Error(
-      `Too many items (${total}). Don't use getItemsFromSheet() with big sheets. Use getItemsPage(page, 42) or getSpreadsheetPage().`
+      `Too many items (${total}). Don't use getItemsFromSheet() with big sheets. Use getItemsPage() or getSpreadsheetPage().`
     );
   }
 

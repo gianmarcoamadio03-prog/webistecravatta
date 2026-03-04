@@ -1,0 +1,20 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getItemsPage } from "@/lib/items";
+
+export const runtime = "nodejs";
+
+function toInt(v: string | null, def: number) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : def;
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const page = toInt(searchParams.get("page"), 1);
+  const limit = Math.min(toInt(searchParams.get("limit"), 200), 500);
+
+  const rows = await getItemsPage(page, limit);
+
+  // Small response: page chunk only
+  return NextResponse.json({ page, limit, count: rows.length, rows });
+}

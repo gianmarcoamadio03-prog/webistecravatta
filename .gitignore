@@ -24,3 +24,6 @@ scraper/checkpoint.json
 .env.local
 service-account.json
 scraper/service-account.json
+
+.env.local.FULLBACKUP
+recover-service-account.sh

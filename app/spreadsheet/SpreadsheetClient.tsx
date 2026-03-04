@@ -6,40 +6,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toUsFansProductUrl, toMulebuyProductUrl } from "../../data/affiliate";
 import { imgProxy, type ImgSize } from "@/src/lib/imgProxy";
 
-type SheetItem = {
+type SheetItemLite = {
   id?: string;
   slug?: string;
   title?: string;
-
   brand?: string;
   category?: string;
   seller?: string;
-
-  images?: string[];
-  pics?: string[];
-
-  img1?: string;
-  img2?: string;
-  img3?: string;
-  img4?: string;
-  img5?: string;
-  img6?: string;
-  img7?: string;
-  img8?: string;
-  img_extra?: string;
-
+  cover?: string;
   source_url?: string;
-
-  usfans?: string;
-  usfans_link?: string;
-  usfans_url?: string;
-
-  mulebuy?: string;
-  mulebuy_link?: string;
-  mulebuy_url?: string;
-
   price_eur?: number | null;
-
+  rowNumber?: number;
   [key: string]: any;
 };
 
@@ -68,67 +45,16 @@ function isValidUrl(v: any) {
   return typeof v === "string" && /^https?:\/\//i.test(v.trim());
 }
 
-function pickTitle(x: SheetItem) {
+function pickTitle(x: SheetItemLite) {
   return x?.title?.trim() ? x.title.trim() : "Articolo";
 }
 
-function normalizeImgUrl(u: string) {
-  const raw = (u ?? "").trim();
-  if (!raw) return "";
-  try {
-    const url = new URL(raw);
-    url.search = "";
-    url.hash = "";
-    return (url.origin + url.pathname).toLowerCase();
-  } catch {
-    return raw.split("#")[0].split("?")[0].toLowerCase();
-  }
+function pickCover(x: SheetItemLite) {
+  const explicit = (x.cover ?? (x as any).img1 ?? "").toString().trim();
+  return explicit || "";
 }
 
-function pickPics(x: SheetItem) {
-  const out: string[] = [];
-  const push = (v: any) => {
-    if (typeof v === "string" && v.trim()) out.push(v.trim());
-  };
-
-  const a = Array.isArray(x.images) ? x.images : [];
-  const b = Array.isArray(x.pics) ? x.pics : [];
-  const base = a.length ? a : b;
-  for (const v of base) push(v);
-
-  for (let i = 1; i <= 8; i++) push((x as any)[`img${i}`]);
-
-  const extra = (x as any).img_extra ?? (x as any).images_extra ?? (x as any).extra_images;
-
-  if (typeof extra === "string" && extra.trim()) {
-    extra
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .forEach((s) => push(s));
-  } else if (Array.isArray(extra)) {
-    extra.forEach(push);
-  }
-
-  const seen = new Set<string>();
-  return out.filter((u) => {
-    if (!u) return false;
-    const k = normalizeImgUrl(u);
-    if (!k) return false;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-}
-
-function pickCover(x: SheetItem) {
-  const explicit = (x.img1 ?? (x as any).cover ?? "").toString().trim();
-  if (explicit) return explicit;
-  const pics = pickPics(x);
-  return pics[0] ?? "";
-}
-
-function findFirstSourceUrl(item: SheetItem) {
+function findFirstSourceUrl(item: SheetItemLite) {
   if (isValidUrl(item?.source_url)) return item.source_url!.trim();
 
   for (const [, v] of Object.entries(item)) {
@@ -141,7 +67,7 @@ function findFirstSourceUrl(item: SheetItem) {
   return "";
 }
 
-function getDirectAgentUrl(item: SheetItem, agent: "usfans" | "mulebuy") {
+function getDirectAgentUrl(item: SheetItemLite, agent: "usfans" | "mulebuy") {
   const keys =
     agent === "usfans"
       ? ["usfans", "usfansLink", "usfans_link", "usfansUrl", "usfans_url"]
@@ -151,7 +77,7 @@ function getDirectAgentUrl(item: SheetItem, agent: "usfans" | "mulebuy") {
     agent === "usfans" ? (s: string) => s.includes("usfans.com") : (s: string) => s.includes("mulebuy.com");
 
   for (const k of keys) {
-    const v = item?.[k];
+    const v = (item as any)?.[k];
     if (!isValidUrl(v)) continue;
     const s = (v as string).toLowerCase();
     if (domainCheck(s)) return (v as string).trim();
@@ -166,7 +92,7 @@ function getDirectAgentUrl(item: SheetItem, agent: "usfans" | "mulebuy") {
   return "";
 }
 
-function buildUsFansLink(item: SheetItem) {
+function buildUsFansLink(item: SheetItemLite) {
   const direct = getDirectAgentUrl(item, "usfans");
   if (direct) return direct;
 
@@ -176,7 +102,7 @@ function buildUsFansLink(item: SheetItem) {
   return toUsFansProductUrl(source) ?? "";
 }
 
-function buildMulebuyLink(item: SheetItem) {
+function buildMulebuyLink(item: SheetItemLite) {
   const direct = getDirectAgentUrl(item, "mulebuy");
   if (direct) return direct;
 
@@ -190,9 +116,6 @@ function formatEur(n: number) {
   return `€ ${n.toFixed(2)}`;
 }
 
-/**
- * ✅ Helpers immagini: forziamo proxy + size=small in LISTA (spreadsheet)
- */
 function isYupooUrl(raw: string) {
   try {
     const u = new URL(raw);
@@ -205,19 +128,16 @@ function isYupooUrl(raw: string) {
 function forceApiImgSize(raw: string, size: ImgSize = "small") {
   const s = (raw ?? "").trim();
   if (!s) return "";
-
   if (!s.includes("/api/img?url=")) return s;
 
   try {
     const base = s.startsWith("http") ? undefined : "http://localhost";
     const u = new URL(s, base);
-
     if (u.pathname.endsWith("/api/img")) {
       u.searchParams.set("size", size);
       if (!s.startsWith("http")) return `${u.pathname}?${u.searchParams.toString()}`;
       return u.toString();
     }
-
     return s;
   } catch {
     if (!s.includes("size=")) return `${s}${s.includes("?") ? "&" : "?"}size=${size}`;
@@ -288,64 +208,14 @@ function AgentButton({
 function ShuffleIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className} fill="none">
-      <path
-        d="M3 7h4.5c1.2 0 2.3.5 3.1 1.3l2.1 2.1"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M3 17h4.5c1.2 0 2.3-.5 3.1-1.3l2.1-2.1"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
-      <path
-        d="M14 7h3.5c.6 0 1.1.2 1.5.6L21 9.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M21 9.5V6"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M21 9.5h-3.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
-      <path
-        d="M14 17h3.5c.6 0 1.1.2 1.5-.6L21 14.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M21 14.5V18"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M21 14.5h-3.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M3 7h4.5c1.2 0 2.3.5 3.1 1.3l2.1 2.1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 17h4.5c1.2 0 2.3-.5 3.1-1.3l2.1-2.1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 7h3.5c.6 0 1.1.2 1.5.6L21 9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21 9.5V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21 9.5h-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 17h3.5c.6 0 1.1.2 1.5-.6L21 14.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21 14.5V18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21 14.5h-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -353,13 +223,7 @@ function ShuffleIcon({ className = "h-4 w-4" }: { className?: string }) {
 function ChevronDown({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
-      <path
-        d="M5 7.5l5 5 5-5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <path d="M5 7.5l5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -373,7 +237,7 @@ export default function SpreadsheetClient({
   facets,
   initialFilters,
 }: {
-  items: SheetItem[];
+  items: SheetItemLite[];
   page: number;
   totalPages: number;
   totalItems: number;
@@ -398,7 +262,6 @@ export default function SpreadsheetClient({
   const [sortMode, setSortMode] = useState<SortMode>("default");
   const [showTop, setShowTop] = useState(false);
 
-  // ✅ mobile UX
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<PickerKind | null>(null);
   const [pickerQuery, setPickerQuery] = useState("");
@@ -406,7 +269,6 @@ export default function SpreadsheetClient({
   const order: "default" | "random" = searchParams?.get("order") === "default" ? "default" : "random";
   const shuffleKey = searchParams?.get("shuffle") ?? "";
 
-  // ✅ FIX DIGITAZIONE MOBILE (iOS/Android): composition + non clobberare q mentre scrivi
   const composingRef = useRef(false);
   const ignoreNextChangeRef = useRef(false);
   const pendingQRef = useRef<string | null>(null);
@@ -453,7 +315,7 @@ export default function SpreadsheetClient({
     if (qTimer.current) clearTimeout(qTimer.current);
     qTimer.current = null;
     setQ("");
-    go(1, { q: "" }, "replace"); // ✅ non sporcate history durante typing
+    go(1, { q: "" }, "replace");
   }
 
   function scheduleSearch(nextQ: string) {
@@ -464,7 +326,7 @@ export default function SpreadsheetClient({
 
     if (qTimer.current) clearTimeout(qTimer.current);
     qTimer.current = setTimeout(() => {
-      go(1, { q: nextQ }, "replace"); // ✅ replace: niente history + meno jank
+      go(1, { q: nextQ }, "replace");
     }, 350);
   }
 
@@ -502,7 +364,6 @@ export default function SpreadsheetClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order, shuffleKey]);
 
-  // sync da server → state (MA non sovrascrivere q mentre l'utente sta scrivendo)
   useEffect(() => {
     const now = Date.now();
     const isFocused = typeof document !== "undefined" && document.activeElement === inputRef.current;
@@ -517,7 +378,6 @@ export default function SpreadsheetClient({
     setCategoryFilter(cleanFilter(initialFilters?.category));
   }, [initialFilters?.q, initialFilters?.seller, initialFilters?.brand, initialFilters?.category]);
 
-  // lock scroll quando la bottom-sheet è aperta
   useEffect(() => {
     if (!pickerOpen) return;
     const prev = document.body.style.overflow;
@@ -686,12 +546,10 @@ export default function SpreadsheetClient({
   const pagerClass =
     "flex items-center h-11 rounded-full border border-white/10 bg-black/45 backdrop-blur-xl overflow-hidden shadow-[0_20px_90px_rgba(0,0,0,0.45)]";
 
-  // ✅ mobile
   const mobileWrap = "sm:hidden mx-auto w-full max-w-[520px]";
   const navCircle =
     "h-10 w-10 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] text-white/85 inline-flex items-center justify-center transition";
 
-  // ✅ iOS fix: input font-size >= 16px (anti-zoom + typing jank)
   const searchInput =
     "h-10 w-full rounded-full pl-4 pr-10 bg-white/5 border border-white/10 text-[16px] text-white/90 outline-none focus:border-white/25";
 
@@ -709,12 +567,10 @@ export default function SpreadsheetClient({
     setPickerQuery("");
     setPickerOpen(kind);
   }
-
   function closePicker() {
     setPickerOpen(null);
     setPickerQuery("");
   }
-
   function labelFor(kind: PickerKind) {
     if (kind === "sort") return sortMode === "default" ? "Ordina" : sortLabel;
     if (kind === "seller") return sellerFilter === "all" ? "Seller: Tutti" : `Seller: ${sellerFilter}`;
@@ -797,7 +653,6 @@ export default function SpreadsheetClient({
     closePicker();
   }
 
-  // shared handlers per input
   const onSearchChange = (v: string) => {
     lastEditAtRef.current = Date.now();
     setQ(v);
@@ -1125,7 +980,6 @@ export default function SpreadsheetClient({
               <div className="mt-3 flex justify-center">
                 <div className="w-full max-w-[1200px] flex items-center gap-2 overflow-x-auto whitespace-nowrap px-1 [-webkit-overflow-scrolling:touch]">
                   {q.trim() ? <FilterChip label={`Ricerca: ${q.trim()}`} onClear={clearQuery} /> : null}
-
                   {sellerFilter !== "all" ? (
                     <FilterChip
                       label={`Seller: ${sellerFilter}`}
@@ -1135,7 +989,6 @@ export default function SpreadsheetClient({
                       }}
                     />
                   ) : null}
-
                   {brandFilter !== "all" ? (
                     <FilterChip
                       label={`Brand: ${brandFilter}`}
@@ -1145,7 +998,6 @@ export default function SpreadsheetClient({
                       }}
                     />
                   ) : null}
-
                   {categoryFilter !== "all" ? (
                     <FilterChip
                       label={`Categoria: ${categoryFilter}`}
@@ -1155,7 +1007,6 @@ export default function SpreadsheetClient({
                       }}
                     />
                   ) : null}
-
                   {sortMode !== "default" ? <FilterChip label={sortLabel} onClear={() => setSortMode("default")} /> : null}
                 </div>
               </div>
@@ -1180,7 +1031,7 @@ export default function SpreadsheetClient({
         </div>
       </div>
 
-      {/* GRID + PAGINAZIONE BOTTOM */}
+      {/* GRID + PAGINAZIONE */}
       <div className={`${container} pt-6 pb-14`}>
         {noResults ? (
           <div className="mx-auto max-w-[520px] text-center rounded-3xl border border-white/10 bg-white/[0.04] p-8">
@@ -1221,8 +1072,6 @@ export default function SpreadsheetClient({
                     key={x.slug}
                     role="link"
                     tabIndex={0}
-                    onMouseEnter={() => router.prefetch(itemHref(x.slug))}
-                    onFocus={() => router.prefetch(itemHref(x.slug))}
                     onClick={() => router.push(itemHref(x.slug))}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
@@ -1275,7 +1124,11 @@ export default function SpreadsheetClient({
                         {x.title}
                       </div>
 
-                      {meta ? <div className="mt-2 text-[11px] text-white/55 truncate">{meta}</div> : <div className="mt-2 h-[16px]" />}
+                      {meta ? (
+                        <div className="mt-2 text-[11px] text-white/55 truncate">{meta}</div>
+                      ) : (
+                        <div className="mt-2 h-[16px]" />
+                      )}
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         <AgentButton href={x.usfans || undefined} label="USFans" accent />
@@ -1294,6 +1147,7 @@ export default function SpreadsheetClient({
                     aria-disabled={!prevHref}
                     tabIndex={prevHref ? 0 : -1}
                     href={prevHref ?? "#"}
+                    prefetch={false}
                     className={[
                       "h-11 w-12 inline-flex items-center justify-center transition",
                       prevHref ? "text-white/85 hover:bg-white/8" : "text-white/35 pointer-events-none",
@@ -1311,6 +1165,7 @@ export default function SpreadsheetClient({
                     aria-disabled={!nextHref}
                     tabIndex={nextHref ? 0 : -1}
                     href={nextHref ?? "#"}
+                    prefetch={false}
                     className={[
                       "h-11 w-12 inline-flex items-center justify-center transition",
                       nextHref ? "text-white/85 hover:bg-white/8" : "text-white/35 pointer-events-none",
@@ -1336,7 +1191,7 @@ export default function SpreadsheetClient({
         </button>
       )}
 
-      {/* ✅ MOBILE CUSTOM PICKER (bottom-sheet) */}
+      {/* ✅ MOBILE CUSTOM PICKER */}
       {pickerOpen ? (
         <div className="sm:hidden fixed inset-0 z-[100]">
           <button

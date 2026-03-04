@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import Gallery from "./Gallery";
 import SupportButton from "./SupportButton";
+import BackLinkClient from "./BackLinkClient";
 
 import { getItemBySlugOrId } from "@/data/itemsFromSheet";
 import { toUsFansProductUrl, toMulebuyProductUrl } from "@/data/affiliate";
@@ -11,9 +11,6 @@ import { normalizeSlug } from "@/src/lib/slug";
 
 export const revalidate = 60;
 export const runtime = "nodejs";
-
-type RawSearchParams = Record<string, string | string[] | undefined>;
-type SearchParamsMaybePromise = RawSearchParams | Promise<RawSearchParams>;
 
 type SheetItem = {
   id?: string;
@@ -45,18 +42,6 @@ type SheetItem = {
 
   [key: string]: any;
 };
-
-async function unwrapSearchParams(sp?: SearchParamsMaybePromise): Promise<RawSearchParams> {
-  if (!sp) return {};
-  if (typeof (sp as any)?.then === "function") return await (sp as Promise<RawSearchParams>);
-  return sp as RawSearchParams;
-}
-
-function getOne(sp: RawSearchParams, key: string) {
-  const v = sp[key];
-  if (Array.isArray(v)) return (v[0] ?? "").toString();
-  return (v ?? "").toString();
-}
 
 function safeStr(v: any) {
   return (v ?? "").toString().trim();
@@ -123,19 +108,6 @@ function getDirectAgentUrl(item: SheetItem, agent: "usfans" | "mulebuy") {
   return "";
 }
 
-function cleanBackQuery(raw: string) {
-  let q = (raw || "").trim();
-  try {
-    q = decodeURIComponent(q);
-  } catch {}
-  q = q.replace(/^\?/, "");
-
-  if (!q) return "";
-  if (q.includes("http://") || q.includes("https://")) return "";
-  if (q.includes("/")) return "";
-  return q;
-}
-
 /** ✅ pill compatte, wrap pulito (anti clipping) */
 function MetaPill({ children }: { children: React.ReactNode }) {
   return (
@@ -173,7 +145,6 @@ function AgentBtn({
   const px = size === "sm" ? "px-3.5" : "px-4";
   const text = size === "sm" ? "text-[13px]" : "text-sm";
 
-  // ✅ icone scalate: su sm più piccole (così non “esplodono” su mobile)
   const icoBox = size === "sm" ? "h-5 w-5 rounded-lg" : "h-6 w-6 rounded-xl";
   const icoImg = size === "sm" ? "h-4 w-4" : "h-5 w-5";
 
@@ -204,14 +175,11 @@ function AgentBtn({
 
 export default async function ItemPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams?: SearchParamsMaybePromise;
 }) {
   const { slug } = await params;
 
-  const sp = await unwrapSearchParams(searchParams);
   const wanted = normalizeSlug(decodeURIComponent(slug));
 
   const found = (await getItemBySlugOrId(wanted)) as SheetItem | null;
@@ -243,16 +211,11 @@ export default async function ItemPage({
   const usfansUrl = usfansDirect || (sourceUrl ? toUsFansProductUrl(sourceUrl) : "");
   const mulebuyUrl = mulebuyDirect || (sourceUrl ? toMulebuyProductUrl(sourceUrl) : "");
 
-  const backRaw = getOne(sp, "back");
-  const backQuery = cleanBackQuery(backRaw);
-  const backHref = backQuery ? `/spreadsheet?${backQuery}` : "/spreadsheet";
-
   const rowNumber =
     typeof found.rowNumber === "number" && Number.isFinite(found.rowNumber)
       ? found.rowNumber
       : null;
 
-  // ✅ padding sotto: sufficiente per dock, ma NON esagerato
   const bottomPad = "pb-[calc(130px+env(safe-area-inset-bottom))] lg:pb-10";
 
   return (
@@ -273,13 +236,9 @@ export default async function ItemPage({
             "sm:px-6 py-3 flex items-center gap-3",
           ].join(" ")}
         >
-          <Link
-            href={backHref}
+          <BackLinkClient
             className="inline-flex items-center justify-center h-10 px-4 rounded-full border border-white/12 bg-white/6 hover:bg-white/10 transition text-sm font-semibold"
-            title="Torna al catalogo"
-          >
-            ← Catalogo
-          </Link>
+          />
 
           <div className="ml-auto text-[11px] text-white/45 hidden sm:block">
             {seller ? `Seller: ${seller}` : ""}
@@ -294,7 +253,6 @@ export default async function ItemPage({
             {title}
           </h1>
 
-          {/* ✅ TAG: wrap pulito + anti clipping */}
           <div className="mt-3 flex flex-wrap gap-2">
             {brand ? <MetaPill>Brand: {brand}</MetaPill> : null}
             {seller ? <MetaPill>Seller: {seller}</MetaPill> : null}
@@ -304,13 +262,11 @@ export default async function ItemPage({
         </header>
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr),360px] items-start">
-          {/* Left */}
           <section className="min-w-0 space-y-5">
             <div className="rounded-3xl border border-white/10 bg-white/5 shadow-[0_30px_120px_rgba(0,0,0,0.55)] overflow-hidden">
               <Gallery images={pics} title={title} />
             </div>
 
-            {/* ✅ Mobile-only support (ripulito, NO testo sotto) */}
             <div className="lg:hidden rounded-3xl border border-white/10 bg-white/5 p-4">
               <div className="flex items-center justify-between">
                 <div className="text-[11px] tracking-[0.32em] uppercase text-white/45">
@@ -334,7 +290,6 @@ export default async function ItemPage({
             </div>
           </section>
 
-          {/* Right (desktop only) */}
           <aside className="hidden lg:block">
             <div className="sticky top-24 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_30px_120px_rgba(0,0,0,0.55)]">
               <div className="text-[11px] tracking-[0.32em] uppercase text-white/45">
@@ -363,7 +318,6 @@ export default async function ItemPage({
                 />
               </div>
 
-              {/* ✅ Assistenza desktop ripulita (NO testo sotto) */}
               <div className="mt-5 pt-5 border-t border-white/10">
                 <div className="text-[11px] tracking-[0.32em] uppercase text-white/45 mb-3">
                   Assistenza
@@ -385,7 +339,6 @@ export default async function ItemPage({
         </div>
       </div>
 
-      {/* Mobile bottom buy bar */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-black/72 backdrop-blur-xl">
         <div
           className={[

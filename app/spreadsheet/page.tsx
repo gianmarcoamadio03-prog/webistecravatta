@@ -2,7 +2,6 @@
 import SpreadsheetClient from "./SpreadsheetClient";
 import { getSpreadsheetPage } from "@/data/itemsFromSheet";
 import { redirect } from "next/navigation";
-import { unstable_cache } from "next/cache";
 
 export const revalidate = 60;
 export const runtime = "nodejs";
@@ -18,14 +17,14 @@ type SheetItem = {
   category?: string;
   seller?: string;
   images?: string[];
-  pics?: string[];
+  cover?: string;
   source_url?: string;
   price_eur?: number | null;
+  tags?: string[];
   [key: string]: any;
 };
 
 const PAGE_SIZE = 54;
-const CACHE_REVALIDATE_SECONDS = 60; // tienilo uguale a export const revalidate
 
 function cleanStr(v: any) {
   if (Array.isArray(v)) v = v[0];
@@ -49,50 +48,6 @@ async function unwrapSearchParams(sp?: SearchParamsMaybePromise): Promise<RawSea
   if (!sp) return {};
   if (typeof (sp as any)?.then === "function") return await (sp as Promise<RawSearchParams>);
   return sp as RawSearchParams;
-}
-
-// ---------- cache helpers (stabile) ----------
-function stableStringify(obj: any): string {
-  if (obj === null || obj === undefined) return String(obj);
-  const t = typeof obj;
-  if (t !== "object") return JSON.stringify(obj);
-  if (Array.isArray(obj)) return `[${obj.map(stableStringify).join(",")}]`;
-  const keys = Object.keys(obj).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(",")}}`;
-}
-
-function hash36(input: string) {
-  let h = 5381;
-  for (let i = 0; i < input.length; i++) h = ((h << 5) + h) ^ input.charCodeAt(i);
-  return (h >>> 0).toString(36);
-}
-
-/**
- * Cache per combinazione (page + size + filtri).
- * Questo evita di chiamare Google Sheets ad ogni request uguale.
- */
-async function getSpreadsheetPageCached(
-  page: number,
-  pageSize: number,
-  opts: {
-    q: string;
-    seller: string;
-    brand: string;
-    category: string;
-    order: "default" | "random";
-    seed?: string;
-  }
-) {
-  const keyPayload = stableStringify({ page, pageSize, ...opts });
-  const key = `spreadsheetPage:v1:${hash36(keyPayload)}`;
-
-  const cachedFn = unstable_cache(
-    async () => getSpreadsheetPage(page, pageSize, opts),
-    [key],
-    { revalidate: CACHE_REVALIDATE_SECONDS }
-  );
-
-  return cachedFn();
 }
 
 export default async function Page({
@@ -133,7 +88,7 @@ export default async function Page({
   }
 
   try {
-    const res = await getSpreadsheetPageCached(requestedPage, PAGE_SIZE, {
+    const res = await getSpreadsheetPage(requestedPage, PAGE_SIZE, {
       q,
       seller,
       brand,

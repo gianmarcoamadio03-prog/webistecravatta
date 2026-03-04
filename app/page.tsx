@@ -64,7 +64,6 @@ export default async function HomePage() {
 
   return (
     <main className="cc-home">
-      {/* ✅ MENU LINGUA (fixed, non rompe layout) */}
       <LanguageMenu />
 
       {/* 1) HERO */}
@@ -73,7 +72,7 @@ export default async function HomePage() {
         <div className="cc-scrollHint">SCROLL ↓</div>
       </section>
 
-      {/* 2) SPREADSHEET (decor solo orbs, NO sagome) */}
+      {/* 2) SPREADSHEET */}
       <ParallaxSection id="spreadsheet" eyebrow="" title="Spreadsheet" childrenWidth="wide" decor="orbs">
         <div className="sheet-ctaRow">
           <Link href="/spreadsheet" className="sheet-cta">
@@ -86,10 +85,10 @@ export default async function HomePage() {
         </div>
       </ParallaxSection>
 
-      {/* 3) SELLERS (qui restano le sagome / parallax) */}
+      {/* 3) SELLERS */}
       <SellersHomeTeaser sellers={preview} />
 
-      {/* 4) QUALITY CHECK (sezione normale) */}
+      {/* 4) QUALITY CHECK */}
       <section className="cc-section" id="quality-check">
         <div className="cc-section-wrap">
           <div className="cc-container">
@@ -110,7 +109,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* 5) COUPON (decor solo orbs, NO sagome) */}
+      {/* 5) COUPON */}
       <ParallaxSection id="coupons" eyebrow="SAVINGS" title="Coupon" decor="orbs">
         <div className="sheet-ctaRow" style={{ alignItems: "center" }}>
           <ComingSoonPill />
@@ -125,7 +124,7 @@ export default async function HomePage() {
         </div>
       </ParallaxSection>
 
-      {/* 6) TUTORIAL (decor solo orbs, NO sagome) */}
+      {/* 6) TUTORIAL */}
       <ParallaxSection id="tutorials" eyebrow="GUIDE" title="Tutorial" decor="orbs">
         <div className="sheet-ctaRow" style={{ alignItems: "center" }}>
           <ComingSoonPill />
