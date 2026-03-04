@@ -27,3 +27,9 @@ scraper/service-account.json
 
 .env.local.FULLBACKUP
 recover-service-account.sh
+
+public/parallax/
+
+public/parallax/
+*.bak.*
+build.log
