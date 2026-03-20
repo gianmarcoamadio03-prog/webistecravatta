@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 // ✅ dismissed lo teniamo "solo sessione" (sessionStorage) così a ogni riapertura torna.
 const KEY_JOINED = "cravatta_tg_joined_v1";
 const KEY_SESSION = "cravatta_tg_session_v1"; // values: "dismissed"
-const TG_LINK = "https://t.me/cnfansbestfind";
+const TG_LINK = "https://t.me/addlist/o6IIDaHApiQ2MzM0";
 
 function TelegramIcon({ className = "" }: { className?: string }) {
   // paper plane (Telegram-like)
