@@ -8,16 +8,22 @@ import SellerAvatar from "@/components/SellerAvatar";
 import VerifiedBadge from "@/components/VerifiedBadge";
 
 export type Seller = {
+  id?: string;
   name: string;
+  title?: string;
+  description?: string;
   verified?: boolean;
   specialties?: string[];
   previewImages?: string[];
   image?: string;
 
   url?: string;
+  href?: string;
   yupoo?: string;
   yupooUrl?: string;
+  yupoo_url?: string;
   baseUrl?: string;
+  store_url?: string;
 
   whatsapp?: string;
   wa?: string;
@@ -34,7 +40,10 @@ export type Seller = {
   [key: string]: any;
 };
 
-export type SellersDirectoryProps = { sellers: Seller[] };
+export type SellersDirectoryProps = {
+  sellers: Seller[];
+  featuredSellers?: Seller[];
+};
 
 function isUrl(v: string) {
   return /^https?:\/\//i.test((v || "").trim());
@@ -58,7 +67,6 @@ function pickImages(s: Seller): string[] {
     [];
 
   const fromArray = arr.map((x: any) => normalizeImg(String(x || ""))).filter(Boolean);
-
   const single = normalizeImg(String((s as any).image || (s as any).avatar || ""));
   const merged = single ? [single, ...fromArray] : fromArray;
 
@@ -69,6 +77,7 @@ function pickImages(s: Seller): string[] {
     seen.add(u);
     out.push(u);
   }
+
   return out.slice(0, 8);
 }
 
@@ -100,6 +109,7 @@ function pickWhatsApp(s: Seller): string {
     String(s.whatsapp || "").trim() ||
     String(s.wa || "").trim() ||
     String(s.contact || "").trim();
+
   return toWhatsAppUrl(raw);
 }
 
@@ -117,7 +127,6 @@ function scoreForSort(s: Seller) {
 
   const scoreN = Number.isFinite(score) ? score : 0;
   const rankN = Number.isFinite(rank) ? rank : 0;
-
   const rankBoost = rankN > 0 ? 1000 - Math.min(rankN, 999) : 0;
 
   return featured * 1_000_000 + scoreN * 10_000 + rankBoost * 100 + verified * 50 + items;
@@ -182,6 +191,10 @@ function FeaturedCard({ s }: { s: Seller }) {
   const specs = (s.specialties || []).slice(0, 3).map(String);
   const itemsCount = pickItemsCount(s);
 
+  const headline = String(s.title || s.name || "").trim();
+  const sellerName = String(s.name || "").trim();
+  const description = String(s.description || "").trim();
+
   return (
     <div className="group overflow-hidden rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl">
       <div className="relative h-[160px] w-full overflow-hidden border-b border-white/10 bg-white/5">
@@ -195,18 +208,34 @@ function FeaturedCard({ s }: { s: Seller }) {
         ) : (
           <div className="h-full w-full" />
         )}
+
         <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/70" />
 
         <div className="absolute bottom-0 left-0 right-0 p-4">
           <div className="flex items-center gap-2">
             <div className="truncate text-lg font-semibold tracking-tight text-white">
-              {String(s.name)}
+              {headline}
             </div>
             {s.verified ? <VerifiedBadge size={16} /> : null}
           </div>
 
+          {headline !== sellerName && sellerName ? (
+            <div className="mt-1 truncate text-xs text-white/65">{sellerName}</div>
+          ) : null}
+
+          {description ? (
+            <div className="mt-2 line-clamp-2 text-xs leading-relaxed text-white/70">
+              {description}
+            </div>
+          ) : null}
+
           <div className="mt-2 flex flex-wrap gap-2">
-            {specs.length ? specs.map((x) => <TagPill key={x} label={x} />) : <TagPill label="Premium" />}
+            {specs.length ? (
+              specs.map((x) => <TagPill key={x} label={x} />)
+            ) : (
+              <TagPill label="Premium" />
+            )}
+
             {itemsCount != null ? (
               <span className="inline-flex items-center rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-[11px] text-white/70">
                 {itemsCount} articoli
@@ -245,9 +274,6 @@ function FeaturedCard({ s }: { s: Seller }) {
   );
 }
 
-/**
- * Carousel mobile
- */
 function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -475,7 +501,7 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
       >
         <div ref={trackRef} className="flex gap-4 py-2 w-max">
           {loopItems.map((s, idx) => (
-            <div key={`${String(s.name)}-${idx}`} className="shrink-0 w-[78vw] max-w-[420px]">
+            <div key={`${String(s.title || s.name)}-${idx}`} className="shrink-0 w-[78vw] max-w-[420px]">
               <FeaturedCard s={s} />
             </div>
           ))}
@@ -489,8 +515,11 @@ function FeaturedCarouselMobile({ sellers }: { sellers: Seller[] }) {
   );
 }
 
-export default function SellersDirectory({ sellers }: SellersDirectoryProps) {
-  const filtered = useMemo(() => {
+export default function SellersDirectory({
+  sellers,
+  featuredSellers = [],
+}: SellersDirectoryProps) {
+  const sortedSellers = useMemo(() => {
     const list = Array.isArray(sellers) ? sellers : [];
     const out = list
       .filter((s) => {
@@ -510,12 +539,14 @@ export default function SellersDirectory({ sellers }: SellersDirectoryProps) {
   }, [sellers]);
 
   const featured = useMemo(() => {
-    const topExplicit = filtered.filter((s) => !!(s.featured || s.best));
-    const base = topExplicit.length ? topExplicit : filtered;
-    return base.slice(0, 6);
-  }, [filtered]);
+    return (Array.isArray(featuredSellers) ? featuredSellers : [])
+      .filter((s) => String(s?.name || "").trim())
+      .slice(0, 6);
+  }, [featuredSellers]);
 
-  const listBars = useMemo(() => filtered.slice(0, 60), [filtered]);
+  const listBars = useMemo(() => {
+    return sortedSellers.slice(0, 60);
+  }, [sortedSellers]);
 
   return (
     <div className="relative min-h-screen">
@@ -536,13 +567,21 @@ export default function SellersDirectory({ sellers }: SellersDirectoryProps) {
         <section className="mb-16">
           <HeroSectionTitle title="Best seller of the month" tone="primary" />
 
-          <div className="hidden md:grid mt-10 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {featured.map((s) => (
-              <FeaturedCard key={String(s.name)} s={s} />
-            ))}
-          </div>
+          {featured.length > 0 ? (
+            <>
+              <div className="hidden md:grid mt-10 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {featured.map((s, i) => (
+                  <FeaturedCard key={`${String(s.title || s.name)}-${i}`} s={s} />
+                ))}
+              </div>
 
-          <FeaturedCarouselMobile sellers={featured} />
+              <FeaturedCarouselMobile sellers={featured} />
+            </>
+          ) : (
+            <div className="mt-10 text-center text-sm text-white/45">
+              Nessun featured seller configurato nel tab <span className="text-white/65">seller_cards</span>.
+            </div>
+          )}
         </section>
 
         <section>

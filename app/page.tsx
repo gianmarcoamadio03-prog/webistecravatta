@@ -8,14 +8,19 @@ import SpreadsheetPreviewCarousel from "@/components/SpreadsheetPreviewCarousel"
 import SellersHomeTeaser from "@/src/lib/components/home/SellersHomeTeaser";
 import QualityCheckHomeTeaser from "@/src/lib/components/home/QualityCheckHomeTeaser";
 
-import { getSellersFromSheet } from "@/data/sellersFromSheet";
+import { getFeaturedSellersFromCards } from "@/data/sellersFromSheet";
 import LanguageMenu from "@/components/LanguageMenu";
 
 export const runtime = "nodejs";
 export const revalidate = 300;
 
 type Seller = {
+  id?: string;
   name: string;
+  title?: string;
+  description?: string;
+  href?: string;
+  image?: string;
   verified?: boolean;
   specialties: string[];
   previewImages: string[];
@@ -33,11 +38,20 @@ function toPlainSeller(r: any): Seller | null {
   if (!name) return null;
 
   return {
+    id: String(r?.id ?? "").trim() || undefined,
     name,
+    title: String(r?.title ?? "").trim() || undefined,
+    description: String(r?.description ?? "").trim() || undefined,
+    href: String(r?.href ?? r?.url ?? "").trim() || undefined,
+    image: String(r?.image ?? "").trim() || undefined,
     verified: Boolean(r?.verified ?? r?.Verified ?? r?.verificato ?? r?.Verificato ?? false),
     specialties: toStringArr(r?.specialties ?? r?.Specialties ?? r?.tags),
-    previewImages: toStringArr(r?.previewImages ?? r?.preview_images ?? r?.images ?? r?.preview),
-    whatsapp: String(r?.whatsapp ?? r?.wa ?? r?.whatsappUrl ?? r?.contact ?? r?.whats ?? "").trim(),
+    previewImages: toStringArr(
+      r?.previewImages ?? r?.preview_images ?? r?.images ?? r?.preview ?? r?.image
+    ),
+    whatsapp: String(
+      r?.whatsapp ?? r?.wa ?? r?.whatsappUrl ?? r?.contact ?? r?.whats ?? ""
+    ).trim(),
   };
 }
 
@@ -52,15 +66,15 @@ function ComingSoonPill() {
 export default async function HomePage() {
   let raw: any[] = [];
   try {
-    const res = await getSellersFromSheet();
+    const res = await getFeaturedSellersFromCards(2);
     raw = Array.isArray(res) ? res : [];
   } catch (e) {
-    console.error("getSellersFromSheet failed:", e);
+    console.error("getFeaturedSellersFromCards failed:", e);
     raw = [];
   }
 
   const sellers: Seller[] = raw.map(toPlainSeller).filter(Boolean) as Seller[];
-  const preview: Seller[] = sellers.slice(0, 8);
+  const preview: Seller[] = sellers;
 
   return (
     <main className="cc-home">

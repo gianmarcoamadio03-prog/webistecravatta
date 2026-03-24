@@ -1,4 +1,3 @@
-// data/sellersFromSheet.ts
 import "server-only";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,7 +5,6 @@ import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
 import type { Seller, SellerCard } from "./sellersShared";
 
-// ✅ placeholder unico per TUTTI i seller quando "image" è vuota
 const DEFAULT_SELLER_IMAGE = "/sellers/yupoo.webp";
 
 function mustEnv(name: string) {
@@ -148,8 +146,6 @@ function splitTags(raw: string): string[] {
   return out;
 }
 
-/* ---------------- retry + cache (anti 503) ---------------- */
-
 function isRetryable(err: any) {
   const msg = String(err?.message || err || "");
   return (
@@ -192,6 +188,13 @@ function cacheStore(): Map<CacheKey, CacheVal> {
   return g.__CRAVATTA_SELLERS_CACHE as Map<CacheKey, CacheVal>;
 }
 
+function normalizeJoinKey(v: any) {
+  return String(v ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\u00a0_-]+/g, "");
+}
+
 export async function getSellersAndCards(): Promise<{
   sellers: Seller[];
   cards: SellerCard[];
@@ -206,7 +209,6 @@ export async function getSellersAndCards(): Promise<{
   const store = cacheStore();
   const cached = store.get(key);
 
-  // ✅ in dev cache più corta per vedere subito i cambi
   const TTL = process.env.NODE_ENV === "development" ? 2_000 : 60_000;
   if (cached && Date.now() - cached.at < TTL) return cached.data;
 
@@ -233,7 +235,6 @@ export async function getSellersAndCards(): Promise<{
 
         if (!id || !name) return null;
 
-        // ✅ colonna "image" nel tab sellers (o alias)
         const image = v(r, "image") || v(r, "avatar") || v(r, "photo") || "";
 
         return ({
@@ -255,6 +256,7 @@ export async function getSellersAndCards(): Promise<{
         const title = v(r, "title");
         const description = v(r, "description") || v(r, "subtitle");
         const image = v(r, "image");
+
         if (!id || !seller_id || !title) return null;
 
         return {
@@ -276,11 +278,6 @@ export async function getSellersAndCards(): Promise<{
   }
 }
 
-/**
- * ✅ Adapter per la UI
- * - include image + previewImages
- * - fallback automatico se image è vuota
- */
 export async function getSellersFromSheet(): Promise<
   {
     id?: string;
@@ -290,10 +287,8 @@ export async function getSellersFromSheet(): Promise<
     specialties?: string[];
     verified?: boolean;
     href?: string;
-
-    image?: string; // immagine principale (già con fallback)
-    previewImages?: string[]; // almeno 1
-
+    image?: string;
+    previewImages?: string[];
     whatsapp?: string | null;
     yupoo_url?: string | null;
     store_url?: string | null;
@@ -306,7 +301,7 @@ export async function getSellersFromSheet(): Promise<
     const out: any[] = [];
 
     for (const s of sellers) {
-      const name = (s?.name ?? "").trim();
+      const name = String((s as any)?.name || "").trim();
       if (!name) continue;
 
       const k = name.toLowerCase();
@@ -314,12 +309,9 @@ export async function getSellersFromSheet(): Promise<
       seen.add(k);
 
       const tags = Array.isArray((s as any).tags) ? (s as any).tags : [];
-
-      // ✅ fallback automatico
       const rawImage = String((s as any).image || "").trim();
       const image = rawImage || DEFAULT_SELLER_IMAGE;
       const previewImages = [image];
-
       const href = (s as any).store_url || (s as any).yupoo_url || "/sellers";
 
       out.push({
@@ -329,14 +321,11 @@ export async function getSellersFromSheet(): Promise<
         specialties: tags,
         verified: true,
         href,
-
         image,
         previewImages,
-
         whatsapp: (s as any).whatsapp ?? null,
         yupoo_url: (s as any).yupoo_url ?? null,
         store_url: (s as any).store_url ?? null,
-
         description:
           tags.length > 0
             ? `Specialità: ${tags.slice(0, 3).join(" · ")}`
@@ -347,6 +336,101 @@ export async function getSellersFromSheet(): Promise<
     return out;
   } catch (e) {
     console.error("getSellersFromSheet failed (fallback to []):", e);
+    return [];
+  }
+}
+
+export async function getFeaturedSellersFromCards(limit = 6): Promise<
+  {
+    id?: string;
+    seller_id?: string;
+    card_id?: string;
+    name: string;
+    title?: string;
+    description?: string;
+    tags?: string[];
+    specialties?: string[];
+    verified?: boolean;
+    href?: string;
+    image?: string;
+    previewImages?: string[];
+    whatsapp?: string | null;
+    yupoo_url?: string | null;
+    store_url?: string | null;
+    featured?: boolean;
+    best?: boolean;
+  }[]
+> {
+  try {
+    const { sellers, cards } = await getSellersAndCards();
+
+    const sellerMap = new Map<string, any>();
+
+    for (const s of sellers) {
+      const byId = normalizeJoinKey((s as any).id);
+      const byName = normalizeJoinKey((s as any).name);
+
+      if (byId) sellerMap.set(byId, s);
+      if (byName) sellerMap.set(byName, s);
+    }
+
+    const out: any[] = [];
+
+    for (const card of cards) {
+      if (out.length >= limit) break;
+
+      const sellerIdKey = normalizeJoinKey(card.seller_id);
+      const titleKey = normalizeJoinKey(card.title);
+
+      const seller =
+        sellerMap.get(sellerIdKey) ||
+        sellerMap.get(titleKey);
+
+      if (!seller) {
+        console.warn(
+          `[featured sellers] Nessun seller trovato per seller_id="${card.seller_id}" title="${card.title}"`
+        );
+        continue;
+      }
+
+      const tags = Array.isArray((seller as any).tags) ? (seller as any).tags : [];
+      const sellerImage = String((seller as any).image || "").trim();
+      const cardImage = String(card.image || "").trim();
+      const image = cardImage || sellerImage || DEFAULT_SELLER_IMAGE;
+
+      out.push({
+        id: (seller as any).id,
+        seller_id: card.seller_id,
+        card_id: card.id,
+
+        name: String((seller as any).name || "").trim(),
+        title: String(card.title || "").trim() || String((seller as any).name || "").trim(),
+        description:
+          String(card.description || "").trim() ||
+          (tags.length > 0
+            ? `Specialità: ${tags.slice(0, 3).join(" · ")}`
+            : "Seller selezionato per consistenza e affidabilità."),
+
+        tags,
+        specialties: tags,
+        verified: true,
+        href: (seller as any).store_url || (seller as any).yupoo_url || "/sellers",
+
+        image,
+        previewImages: [image],
+
+        whatsapp: (seller as any).whatsapp ?? null,
+        yupoo_url: (seller as any).yupoo_url ?? null,
+        store_url: (seller as any).store_url ?? null,
+
+        featured: true,
+        best: true,
+      });
+    }
+
+    return out;
+  } catch (e) {
+    console.error("getFeaturedSellersFromCards failed:", e);
     return [];
   }
 }
