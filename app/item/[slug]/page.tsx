@@ -9,7 +9,7 @@ import { toUsFansProductUrl, toMulebuyProductUrl } from "@/data/affiliate";
 import { parseCny, cnyToEur, formatEUR } from "@/src/lib/currency";
 import { normalizeSlug } from "@/src/lib/slug";
 
-export const revalidate = 60;
+export const revalidate = 300;
 export const runtime = "nodejs";
 
 type SheetItem = {

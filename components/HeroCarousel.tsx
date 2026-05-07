@@ -11,7 +11,6 @@ const ITEMS: OrbitItem[] = [
   { label: "Best Seller", href: "/sellers" },
   { label: "Tutorial", href: "/tutorials" },
   { label: "Coupon", href: "/coupons" },
-  { label: "AI Quality Check", href: "/quality-check" },
 ];
 
 const TAU = Math.PI * 2;
@@ -233,49 +232,15 @@ export default function HeroCarousel() {
   }, []);
 
   useEffect(() => {
-    const MIN_SCALE = 0.94;
-    const MAX_SCALE = 1.16;
-    const MIN_OPACITY = 0.74;
-    const MAX_OPACITY = 1.0;
-    const MIN_BRIGHT = 0.9;
-    const MAX_BRIGHT = 1.05;
 
     const animate = (t: number) => {
       if (!lastRef.current) lastRef.current = t;
-
       let dt = t - lastRef.current;
       lastRef.current = t;
       dt = Math.min(dt, 50);
-
       speedRef.current = lerp(speedRef.current, targetSpeedRef.current, 0.06);
       angleRef.current += speedRef.current * dt;
-
-      const { A, B } = radiiRef.current;
-      const START = startAngleRef.current;
-      const n = ITEMS.length;
-
-      for (let i = 0; i < n; i++) {
-        const el = itemRefs.current[i];
-        if (!el) continue;
-
-        const a = angleRef.current + START + (i * TAU) / n;
-
-        const x = A * Math.cos(a);
-        const y = B * Math.sin(a);
-
-        const depth = (Math.sin(a) + 1) / 2;
-        const s = lerp(MIN_SCALE, MAX_SCALE, depth);
-        const o = lerp(MIN_OPACITY, MAX_OPACITY, depth);
-        const br = lerp(MIN_BRIGHT, MAX_BRIGHT, depth);
-
-        el.style.setProperty("--x", `${x}px`);
-        el.style.setProperty("--y", `${y}px`);
-        el.style.setProperty("--s", `${s}`);
-        el.style.setProperty("--o", `${o}`);
-        el.style.setProperty("--br", `${br}`);
-        el.style.zIndex = String(Math.round(depth * 1000));
-      }
-
+      applyLayoutOnce();
       rafRef.current = requestAnimationFrame(animate);
     };
 

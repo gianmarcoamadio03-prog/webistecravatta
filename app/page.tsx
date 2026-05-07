@@ -6,7 +6,7 @@ import ParallaxSection from "@/components/ParallaxSection";
 import SpreadsheetPreviewCarousel from "@/components/SpreadsheetPreviewCarousel";
 
 import SellersHomeTeaser from "@/src/lib/components/home/SellersHomeTeaser";
-import QualityCheckHomeTeaser from "@/src/lib/components/home/QualityCheckHomeTeaser";
+import TutorialCarousel from "@/components/TutorialCarousel";
 
 import { getFeaturedSellersFromCards } from "@/data/sellersFromSheet";
 import LanguageMenu from "@/components/LanguageMenu";
@@ -102,26 +102,15 @@ export default async function HomePage() {
       {/* 3) SELLERS */}
       <SellersHomeTeaser sellers={preview} />
 
-      {/* 4) QUALITY CHECK */}
-      <section className="cc-section" id="quality-check">
-        <div className="cc-section-wrap">
-          <div className="cc-container">
-            <div className="ps-header">
-              <div className="ps-eyebrow">AI</div>
-              <h2 className="ps-title">AI Quality Check</h2>
-
-              <div className="sheet-ctaRow">
-                <Link href="/quality-check" className="sheet-cta">
-                  Ispeziona articoli →
-                </Link>
-                <div className="sheet-ctaSub"> </div>
-              </div>
-            </div>
-
-            <QualityCheckHomeTeaser />
-          </div>
+      {/* 4) TUTORIAL */}
+      <ParallaxSection id="tutorials" eyebrow="GUIDE" title="Tutorial" childrenWidth="wide" decor="orbs">
+        <div className="sheet-ctaRow">
+          <Link href="/tutorials" className="sheet-cta">
+            Vai ai Tutorial →
+          </Link>
         </div>
-      </section>
+        <TutorialCarousel />
+      </ParallaxSection>
 
       {/* 5) COUPON */}
       <ParallaxSection id="coupons" eyebrow="SAVINGS" title="Coupon" decor="orbs">
@@ -138,20 +127,6 @@ export default async function HomePage() {
         </div>
       </ParallaxSection>
 
-      {/* 6) TUTORIAL */}
-      <ParallaxSection id="tutorials" eyebrow="GUIDE" title="Tutorial" decor="orbs">
-        <div className="sheet-ctaRow" style={{ alignItems: "center" }}>
-          <ComingSoonPill />
-          <div className="sheet-ctaSub">Stiamo preparando le guide.</div>
-        </div>
-
-        <div className="sheet-ctaRow">
-          <Link href="/tutorials" className="sheet-cta">
-            Vai ai Tutorial →
-          </Link>
-          <div className="sheet-ctaSub">In arrivo a breve.</div>
-        </div>
-      </ParallaxSection>
     </main>
   );
 }

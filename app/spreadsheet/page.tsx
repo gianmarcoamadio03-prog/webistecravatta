@@ -3,11 +3,11 @@ import SpreadsheetClient from "./SpreadsheetClient";
 import { getSpreadsheetPage } from "@/data/itemsFromSheet";
 import { redirect } from "next/navigation";
 
-export const revalidate = 60;
+// FIX: era 60 — allineato con TTL cache (300s)
+export const revalidate = 300;
 export const runtime = "nodejs";
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
-type SearchParamsMaybePromise = RawSearchParams | Promise<RawSearchParams>;
 
 type SheetItem = {
   id?: string;
@@ -44,56 +44,46 @@ function cleanSeed(v: string) {
   return (v || "").trim().slice(0, 64);
 }
 
-async function unwrapSearchParams(sp?: SearchParamsMaybePromise): Promise<RawSearchParams> {
+async function unwrapSearchParams(sp?: Promise<RawSearchParams>): Promise<RawSearchParams> {
   if (!sp) return {};
-  if (typeof (sp as any)?.then === "function") return await (sp as Promise<RawSearchParams>);
-  return sp as RawSearchParams;
+  return await sp;
 }
 
 export default async function Page({
   searchParams,
 }: {
-  searchParams?: SearchParamsMaybePromise;
+  searchParams?: Promise<RawSearchParams>;
 }) {
   const sp = await unwrapSearchParams(searchParams);
 
   const order: "default" | "random" =
     cleanStr(sp.order) === "default" ? "default" : "random";
 
-  const q = cleanStr(sp.q);
-  const seller = cleanFilter(sp.seller);
-  const brand = cleanFilter(sp.brand);
+  const q        = cleanStr(sp.q);
+  const seller   = cleanFilter(sp.seller);
+  const brand    = cleanFilter(sp.brand);
   const category = cleanFilter(sp.category);
 
-  const pageRaw = parseInt(cleanStr(sp.page) || "1", 10);
+  const pageRaw       = parseInt(cleanStr(sp.page) || "1", 10);
   const requestedPage = Number.isFinite(pageRaw) ? pageRaw : 1;
+  let   shuffle       = cleanSeed(cleanStr(sp.shuffle));
 
-  let shuffle = cleanSeed(cleanStr(sp.shuffle));
-
-  // se sei in random ma manca shuffle, generiamo seed server-side e redirectiamo
   if (order === "random" && !shuffle) {
     shuffle = Date.now().toString(36);
-
     const params = new URLSearchParams();
     params.set("order", "random");
     params.set("shuffle", shuffle);
-
-    if (requestedPage > 1) params.set("page", String(requestedPage));
-    if (q) params.set("q", q);
-    if (seller && seller !== "all") params.set("seller", seller);
-    if (brand && brand !== "all") params.set("brand", brand);
+    if (requestedPage > 1)              params.set("page", String(requestedPage));
+    if (q)                              params.set("q", q);
+    if (seller   && seller   !== "all") params.set("seller", seller);
+    if (brand    && brand    !== "all") params.set("brand", brand);
     if (category && category !== "all") params.set("category", category);
-
     redirect(`/spreadsheet?${params.toString()}`);
   }
 
   try {
     const res = await getSpreadsheetPage(requestedPage, PAGE_SIZE, {
-      q,
-      seller,
-      brand,
-      category,
-      order,
+      q, seller, brand, category, order,
       seed: order === "random" ? shuffle : undefined,
     });
 
@@ -113,7 +103,7 @@ export default async function Page({
       </main>
     );
   } catch (err: any) {
-    const msg = String(err?.message || "");
+    const msg    = String(err?.message || "");
     const status = (err && (err.status || err.code)) ?? "";
     const isQuota =
       status === 429 ||
@@ -122,16 +112,7 @@ export default async function Page({
 
     return (
       <main className="ss-page" style={{ padding: 24 }}>
-        <div
-          style={{
-            maxWidth: 720,
-            margin: "0 auto",
-            borderRadius: 20,
-            border: "1px solid rgba(255,255,255,0.10)",
-            background: "rgba(255,255,255,0.04)",
-            padding: 20,
-          }}
-        >
+        <div style={{ maxWidth: 720, margin: "0 auto", borderRadius: 20, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", padding: 20 }}>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
             {isQuota ? "Spreadsheet temporaneamente occupato" : "Errore nel caricamento"}
           </div>
@@ -140,10 +121,7 @@ export default async function Page({
               ? "Il server ha raggiunto un limite di richieste verso Google Sheets. Riprova tra 30–60 secondi."
               : "Si è verificato un errore durante il caricamento della pagina."}
           </div>
-
-          <div style={{ marginTop: 14, opacity: 0.55, fontSize: 12 }}>
-            {msg ? `Dettaglio: ${msg}` : null}
-          </div>
+          {msg ? <div style={{ marginTop: 14, opacity: 0.55, fontSize: 12 }}>Dettaglio: {msg}</div> : null}
         </div>
       </main>
     );

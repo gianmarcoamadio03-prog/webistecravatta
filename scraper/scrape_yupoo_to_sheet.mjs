@@ -181,7 +181,7 @@ function extractAlbumId(url) {
 }
 
 function isCategoryUrl(url) {
-  return /\/categories\/\d+/.test(String(url || ""));
+  return /\/categories(?:\/\d+)?(?:[/?#]|$)/.test(String(url || ""));
 }
 function isAlbumUrl(url) {
   return /\/albums\/\d+/.test(String(url || ""));
@@ -639,7 +639,7 @@ function looksDescriptiveTitle(titleRaw) {
   if (t.length < 6) return false;
   const hasLetters = /[A-Za-z]{3,}/.test(t);
   const hasCjk = /[一-鿿]/.test(t);
-  const digits = (t.match(/d/g) || []).length;
+  const digits = (t.match(/\d/g) || []).length;
   // se è quasi tutto numeri/codici, non è descrittivo
   if (!hasLetters && !hasCjk) return false;
   if (digits > 10 && t.length < 18) return false;
@@ -1942,6 +1942,18 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
     return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
   }
 
+  function buildCategoryPageUrl(baseUrl, pageNum) {
+    const u = new URL(baseUrl);
+
+    if (pageNum <= 1) {
+      u.searchParams.delete("page");
+      return u.toString();
+    }
+
+    u.searchParams.set("page", String(pageNum));
+    return u.toString();
+  }
+
   async function collectAlbumCardsFast() {
     const found = await page.evaluate(() => {
       const anchors = Array.from(
@@ -2029,17 +2041,16 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
   try {
     const cap = normalizeCap(maxPagesCap);
 
-    const u1 = new URL(categoryUrl);
-    u1.searchParams.set("page", "1");
+    const page1Url = buildCategoryPageUrl(categoryUrl, 1);
 
-    console.log(`\n📄 Pagina categoria 1: ${u1.toString()}`);
+    console.log(`\n📄 Pagina categoria 1: ${page1Url}`);
     try {
-      await safeGoto(page, u1.toString(), { retries: 2, timeout: NAV_TIMEOUT });
+      await safeGoto(page, page1Url, { retries: 2, timeout: NAV_TIMEOUT });
     } catch (e) {
       const msg = String(e?.message || e);
       if (msg.toLowerCase().includes("restricted") && storageAbsForRescue) {
         await rescueIfRestricted(context, storageAbsForRescue, primeUrlForRescue || categoryUrl);
-        await safeGoto(page, u1.toString(), { retries: 1, timeout: NAV_TIMEOUT });
+        await safeGoto(page, page1Url, { retries: 1, timeout: NAV_TIMEOUT });
       } else throw e;
     }
 
@@ -2065,18 +2076,17 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
       const nextPage = await getNextPageNumberFromDom(page).catch(() => 0);
       if (!nextPage || nextPage <= current) break;
 
-      const u = new URL(categoryUrl);
-      u.searchParams.set("page", String(nextPage));
+      const nextUrl = buildCategoryPageUrl(categoryUrl, nextPage);
 
-      console.log(`\n📄 Pagina categoria ${nextPage}: ${u.toString()}`);
+      console.log(`\n📄 Pagina categoria ${nextPage}: ${nextUrl}`);
 
       try {
-        await safeGoto(page, u.toString(), { retries: 2, timeout: NAV_TIMEOUT });
+        await safeGoto(page, nextUrl, { retries: 2, timeout: NAV_TIMEOUT });
       } catch (e) {
         const msg = String(e?.message || e);
         if (msg.toLowerCase().includes("restricted") && storageAbsForRescue) {
           await rescueIfRestricted(context, storageAbsForRescue, primeUrlForRescue || categoryUrl);
-          await safeGoto(page, u.toString(), { retries: 1, timeout: NAV_TIMEOUT });
+          await safeGoto(page, nextUrl, { retries: 1, timeout: NAV_TIMEOUT });
         } else throw e;
       }
 
@@ -2297,7 +2307,7 @@ async function scrape1688ShopOfferList(context, listUrl, maxPagesCap = 0) {
       const canon = canonicalize1688OfferUrl(hrefAbs);
       offerUrls.add(canon);
 
-      const imgAbs = toBigAlicdnUrl(toHttpsMaybe(it?.imgAbs || ""));
+      const imgAbs = toBigAlicdnUrl(toHttpsMaybe(it?.imgAbs || "")) || "";
       if (imgAbs && !coverByOffer.has(canon)) coverByOffer.set(canon, imgAbs);
     }
 
@@ -2687,20 +2697,20 @@ async function scrape1688OfferOnPage(
   const wantsAutoBrand = !brandRaw || brandRaw.toUpperCase() === "AUTO";
   const wantsAutoCat = !catRaw || catRaw.toUpperCase() === "AUTO";
 
-      // 🔎 Try to detect category from multiple Yupoo signals BEFORE using AI
-const crumbText = await getYupooBreadcrumbText(page).catch(() => "");
-const detectedTypeTitle = detectProductTypeFromTitle(titleRaw);
-const detectedTypeCrumb = detectProductTypeFromTitle(crumbText);
-const detectedTypeBody = detectProductTypeFromTitle(String(bodyText || "").slice(0, 1500));
+  // 🔎 Try to detect category from multiple Yupoo signals BEFORE using AI
+  const crumbText = await getYupooBreadcrumbText(page).catch(() => "");
+  const detectedTypeTitle = detectProductTypeFromTitle(titleRaw);
+  const detectedTypeCrumb = detectProductTypeFromTitle(crumbText);
+  const detectedTypeBody = detectProductTypeFromTitle(String(bodyText || "").slice(0, 1500));
 
-const detectedType =
-  detectedTypeTitle !== "OTHER" ? detectedTypeTitle :
-  detectedTypeCrumb !== "OTHER" ? detectedTypeCrumb :
-  detectedTypeBody !== "OTHER" ? detectedTypeBody :
-  "OTHER";
+  const detectedType =
+    detectedTypeTitle !== "OTHER" ? detectedTypeTitle :
+    detectedTypeCrumb !== "OTHER" ? detectedTypeCrumb :
+    detectedTypeBody !== "OTHER" ? detectedTypeBody :
+    "OTHER";
 
-const shouldAiBrand = wantsAutoBrand;
-const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
+  const shouldAiBrand = wantsAutoBrand;
+  const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
 
   let aiBrand = "";
   let aiCat = "";
@@ -2741,17 +2751,17 @@ const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
     if (FOOTWEAR_TYPES.has(finalCategory)) {
       const brandHint = (String(finalBrand || "").trim() || String(brandRaw || "").trim()).trim();
       const tryShoeNameAi = shoeNameEnabled && shouldTryShoeNameAi(titleRaw, (typeof crumbText !== "undefined" ? crumbText : ""), bodyText);
-        const shoeNameRaw = tryShoeNameAi
-          ? await aiDetectFootwearNameFromCover(
-              context,
-              img1Final,
-              brandHint,
-              titleRaw,
-              bodyText,
-              normUrl,
-              { aiEnabled, shoeNameEnabled }
-            )
-          : "";
+      const shoeNameRaw = tryShoeNameAi
+        ? await aiDetectFootwearNameFromCover(
+            context,
+            img1Final,
+            brandHint,
+            titleRaw,
+            bodyText,
+            normUrl,
+            { aiEnabled, shoeNameEnabled }
+          )
+        : "";
       const shoeName = removeRedundantBrandPrefix(shoeNameRaw, brandHint);
 
       if (shoeName) {
@@ -2954,8 +2964,8 @@ async function scrapeAlbumOnPage(
     const wantsAutoBrand = !brandRaw || brandRaw.toUpperCase() === "AUTO";
     const wantsAutoCat = !catRaw || catRaw.toUpperCase() === "AUTO";
 
-      const detectedType = detectProductTypeFromSignals(titleRaw, "", bodyText);
-      const shouldAiBrand = wantsAutoBrand && detectedType === "OTHER";
+    const detectedType = detectProductTypeFromSignals(titleRaw, crumbText, bodyText);
+    const shouldAiBrand = wantsAutoBrand && detectedType === "OTHER";
     const shouldAiCat = wantsAutoCat && detectedType === "OTHER";
 
     let aiBrand = "";

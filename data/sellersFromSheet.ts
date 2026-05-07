@@ -35,7 +35,7 @@ function tryReadServiceAccountJson(): { email: string; key: string } | null {
         continue;
       }
 
-      const abs = path.isAbsolute(p) ? p : path.join(process.cwd(), p);
+      const abs = path.isAbsolute(p) ? p : path.join(eval("process").cwd(), p);
       if (!fs.existsSync(abs)) continue;
 
       const raw = fs.readFileSync(abs, "utf8");

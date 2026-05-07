@@ -45,7 +45,7 @@ dotenv.config({ path: path.join(PROJECT_ROOT, ".env.local") });
 // ENV
 // =====================================================
 const VERSION =
-  "2026-02-24 | corrector v8: page-hint from Yupoo URL (col Q) before AI + scraper-aligned taxonomy/rules";
+  "2026-02-24 | corrector v8: page-hint from Yupoo URL (col Q) before AI + scraper-aligned taxonomy/rules + electronics";
 
 const SHEET_ID = (process.env.SHEET_ID || "").trim();
 const SHEET_TAB = (process.env.SHEET_TAB || "items").trim();
@@ -66,7 +66,7 @@ const CORRECTOR_ALLOW_AI_IN_DRY_RUN = String(process.env.CORRECTOR_ALLOW_AI_IN_D
 const CORRECTOR_ONLY_OTHER = String(process.env.CORRECTOR_ONLY_OTHER || "1").trim() !== "0";
 const CORRECTOR_USE_TITLE_HINT_FIRST = String(process.env.CORRECTOR_USE_TITLE_HINT_FIRST || "1").trim() !== "0";
 
-// ✅ NEW: page-hint da colonna Q (yupoo_url) prima dell'AI
+// ✅ page-hint da colonna Q (yupoo_url) prima dell'AI
 const CORRECTOR_USE_PAGE_HINT_FIRST = String(process.env.CORRECTOR_USE_PAGE_HINT_FIRST || "1").trim() !== "0";
 const CORRECTOR_PAGE_HINT_MIN_CONF = Math.max(
   0,
@@ -220,7 +220,7 @@ const ALLOWED_TYPES = new Set([
 
   "FRAGRANCES","SKINCARE","HAIR","MAKEUP",
 
-  "PHONE_CASES","AIRPODS_CASES","TECH_ACCESSORIES",
+  "PHONE_CASES","AIRPODS_CASES","TECH_ACCESSORIES","ELECTRONICS",
 
   "KIDS","PETS","HOME","DECOR","OTHER",
 ]);
@@ -333,6 +333,35 @@ const CATEGORY_ALIASES = {
   SCARVES: "SCARVES",
   SHAWL: "SCARVES",
   SHAWLS: "SCARVES",
+
+  // electronics
+  ELECTRONIC: "ELECTRONICS",
+  ELECTRONICS: "ELECTRONICS",
+  ELECTRONIC_DEVICE: "ELECTRONICS",
+  ELECTRONIC_DEVICES: "ELECTRONICS",
+  GADGET: "ELECTRONICS",
+  GADGETS: "ELECTRONICS",
+  TECH: "ELECTRONICS",
+  DEVICE: "ELECTRONICS",
+  DEVICES: "ELECTRONICS",
+  AUDIO: "ELECTRONICS",
+  SPEAKER: "ELECTRONICS",
+  SPEAKERS: "ELECTRONICS",
+  HEADPHONE: "ELECTRONICS",
+  HEADPHONES: "ELECTRONICS",
+  EARBUD: "ELECTRONICS",
+  EARBUDS: "ELECTRONICS",
+  EARPHONE: "ELECTRONICS",
+  EARPHONES: "ELECTRONICS",
+  CHARGER: "ELECTRONICS",
+  CHARGERS: "ELECTRONICS",
+  POWERBANK: "ELECTRONICS",
+  POWER_BANK: "ELECTRONICS",
+  APPLE: "ELECTRONICS",
+  DYSON: "ELECTRONICS",
+  JBL: "ELECTRONICS",
+  SAMSUNG: "ELECTRONICS",
+  SONY: "ELECTRONICS",
 };
 
 function canonicalizeCategory(raw) {
@@ -351,6 +380,12 @@ function detectProductTypeFromTitle(titleRaw) {
   const rules = [
     // Accessories first
     { type: "SCARVES", re: /\bscarf(s)?\b|\bshawl(s)?\b|\bfoulard\b|\bsciarpa\b|\b围巾\b/ },
+
+    // Electronics
+    {
+      type: "ELECTRONICS",
+      re: /\biphone\b|\bipad\b|\bmacbook\b|\bapple\s*watch\b|\bairpods?\b|\bdyson\b|\bjbl\b|\bsamsung\b|\bsony\b|\bheadphones?\b|\bearbuds?\b|\bearphones?\b|\bspeaker(s)?\b|\bbluetooth\b|\bcharger(s)?\b|\bcable(s)?\b|\bpower\s*bank\b|\bpowerbank\b|\bvacuum\b|\bphon(e|es)\b|\btablet(s)?\b|\blaptop(s)?\b|\bsmart\s*watch\b|\bwatch\s*ultra\b|\b电子\b|\b耳机\b|\b音箱\b|\b充电器\b/
+    },
 
     // Knit / sweaters
     { type: "CARDIGANS", re: /\bcardigan(s)?\b/ },
@@ -538,7 +573,6 @@ async function fetchImageAsDataUri(context, url, detailMode = "low", referer = "
       if (res.ok() && ct.startsWith("image/")) {
         const buf = await res.body();
 
-        // ✅ se troppo grande, prova la candidate successiva (medium/small)
         if (buf.length > CORRECTOR_AI_MAX_BYTES) {
           lastErr = new Error(`image too large bytes=${buf.length} url=${u}`);
           continue;
@@ -592,7 +626,7 @@ async function fetchAlbumFallbackImages(context, albumUrl) {
 }
 
 // =====================================================
-// NEW: Page-hint da pagina album (colonna Q)
+// Page-hint da pagina album (colonna Q)
 // =====================================================
 function stripTags(s) {
   return String(s || "")
@@ -646,7 +680,6 @@ function pickJsonCategoryNames(html) {
 }
 
 function makePageCacheKey(albumUrl) {
-  // mettiamo anche origin per evitare collisioni strane
   try {
     const u = new URL(toHttpsUrl(albumUrl));
     return `page::${u.origin}${u.pathname}`.toLowerCase();
@@ -689,7 +722,6 @@ async function detectCategoryFromAlbumPage(context, albumUrl) {
 
     if (!text) return { category: "OTHER", confidence: 0, reason: "PAGE_EMPTY" };
 
-    // conf euristica: breadcrumb/json > keywords/meta > title
     let conf = 0.62;
     if (crumbs.length) conf = 0.82;
     else if (jsonCats.length) conf = 0.78;
@@ -698,11 +730,10 @@ async function detectCategoryFromAlbumPage(context, albumUrl) {
     const cat = detectProductTypeFromTitle(text);
     if (cat && cat !== "OTHER" && ALLOWED_TYPES.has(cat)) {
       const result = { category: cat, confidence: conf };
-      setCache(pageKey, result); // ✅ cache positiva page-hint
+      setCache(pageKey, result);
       return { ...result, reason: "PAGE_HINT" };
     }
 
-    // cache “neutro” (no-match) per evitare refetch continuo
     setCache(pageKey, { category: "OTHER", confidence: 0.0 });
     return { category: "OTHER", confidence: 0, reason: "PAGE_HINT_NO_MATCH" };
   } catch (e) {
@@ -782,7 +813,6 @@ async function aiDetectCategory(context, imageUrl, brandHint, titleHint, referer
 
   const key = makeCacheKey(imageUrl, referer);
 
-  // ✅ Usa cache solo se NON è un vecchio negativo (category OTHER + conf 0 + err)
   const cached = getCache(key);
   if (cached && cached.category && typeof cached.confidence === "number") {
     const isOldNegative = cached.category === "OTHER" && Number(cached.confidence) === 0 && !!cached.err;
@@ -832,8 +862,6 @@ TITLE_HINT: ${String(titleHint || "").slice(0, 220)}
       if (!Number.isFinite(conf)) conf = 0;
 
       const result = { category: cat, confidence: Math.max(0, Math.min(1, conf)) };
-
-      // ✅ cache SOLO su successo reale (fetch OK + risposta AI OK)
       setCache(key, result);
 
       return { ...result, fetchOk: true, reason: "OK", usedUrl };
@@ -841,7 +869,6 @@ TITLE_HINT: ${String(titleHint || "").slice(0, 220)}
       lastErr = e;
       const msg = String(e?.message || e);
 
-      // ✅ se è un problema di fetch/blocco/too-large: NON cacheare negativo
       if (
         msg.includes("non-image/blocked") ||
         msg.includes("fetchImageAsDataUri") ||
@@ -850,13 +877,11 @@ TITLE_HINT: ${String(titleHint || "").slice(0, 220)}
         return { category: "OTHER", confidence: 0, fetchOk: false, reason: "FETCH_FAIL", err: msg };
       }
 
-      // retry su 429
       if (msg.includes("429")) await sleep(2500 * attempt);
       else await sleep(700 * attempt);
     }
   }
 
-  // ✅ errore AI vero: non cacheare negativo
   return { category: "OTHER", confidence: 0, fetchOk: false, reason: "AI_ERR", err: String(lastErr?.message || lastErr) };
 }
 
@@ -953,7 +978,6 @@ async function main() {
   console.log(`🎯 Target (category=OTHER + img1): ${targets.length}`);
   if (!targets.length) return;
 
-  // Playwright context (headless by default)
   const storageAbs = absPathFromRoot(YUPOO_STORAGE_STATE);
   const browser = await chromium.launch({ headless: !CORRECTOR_HEADFUL });
   let context = null;
@@ -1018,7 +1042,6 @@ async function main() {
         const { rowNum, row, title, brand } = nx.item;
         const currentCat = String(row[4] || "").trim().toUpperCase();
 
-        // candidate images: img1..img8 + extra_images
         const imgs = [];
         for (let k = 6; k <= 13; k++) {
           const u = String(row[k] || "").trim();
@@ -1030,18 +1053,17 @@ async function main() {
         }
 
         let candidates = dedupePreserveOrder(imgs);
-
         const referer = String(row[16] || "").trim(); // yupoo_url (col Q)
 
         try {
-          // 1) Title hint first (no tokens)
+          // 1) Title hint first
           if (CORRECTOR_USE_TITLE_HINT_FIRST) {
             const hint = detectProductTypeFromTitle(title);
             if (hint && hint !== "OTHER" && ALLOWED_TYPES.has(hint)) {
               const newTitle = buildNewTitle(brand, hint, title);
               pendingUpdates.push({
                 range: `${sheetA1Tab(SHEET_TAB)}!C${rowNum}:E${rowNum}`,
-                values: [[newTitle, row[3] || "", hint]], // C,D,E
+                values: [[newTitle, row[3] || "", hint]],
               });
               changedCount++;
               console.log(
@@ -1052,7 +1074,7 @@ async function main() {
             }
           }
 
-          // 2) ✅ NEW: Page-hint dalla pagina Yupoo (col Q) prima dell'AI
+          // 2) Page-hint prima dell'AI
           if (CORRECTOR_USE_PAGE_HINT_FIRST && referer) {
             const ph = await detectCategoryFromAlbumPage(context, referer);
             if (ph.category !== "OTHER" && ph.confidence >= CORRECTOR_PAGE_HINT_MIN_CONF) {
@@ -1078,7 +1100,7 @@ async function main() {
             continue;
           }
 
-          // 3) AI multi-image fallback (pass1 low -> pass2 auto)
+          // 3) AI multi-image fallback
           let best = { category: "OTHER", confidence: 0, used: "", reason: "" };
           let addedAlbumFallback = false;
 
@@ -1092,7 +1114,7 @@ async function main() {
 
               if (!r.fetchOk) {
                 best.reason = best.reason || r.reason || "FETCH_FAIL";
-                continue; // non conta come tentativo utile
+                continue;
               }
 
               okAttempts++;
@@ -1112,14 +1134,12 @@ async function main() {
               if (okAttempts >= CORRECTOR_MAX_IMAGES_TO_TRY) break;
             }
 
-            // se non siamo riusciti a processare nulla (tutti fetch fail),
-            // prova fallback da pagina album (referer) e ripeti lo stesso pass
             if (!addedAlbumFallback && referer && best.category === "OTHER" && best.confidence === 0) {
               const fb = await fetchAlbumFallbackImages(context, referer);
               if (fb.length) {
                 candidates = dedupePreserveOrder([...fb, ...candidates]);
                 addedAlbumFallback = true;
-                pass--; // ripeti stesso pass con nuove immagini
+                pass--;
                 continue;
               }
             }

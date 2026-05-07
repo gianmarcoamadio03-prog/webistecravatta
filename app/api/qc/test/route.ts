@@ -15,12 +15,14 @@ export async function GET() {
   try {
     const client = new OpenAI({ apiKey: key });
 
-    const resp = await client.responses.create({
+    const resp = await client.chat.completions.create({
       model: "gpt-4.1-mini",
-      input: "Rispondi solo con la parola: OK",
+      max_tokens: 10,
+      messages: [{ role: "user", content: "Rispondi solo con la parola: OK" }],
     });
 
-    return NextResponse.json({ ok: true, text: resp.output_text });
+    const text = resp.choices?.[0]?.message?.content?.trim() ?? "";
+    return NextResponse.json({ ok: true, text });
   } catch (err: any) {
     const status = err?.status ?? err?.response?.status;
     const code =

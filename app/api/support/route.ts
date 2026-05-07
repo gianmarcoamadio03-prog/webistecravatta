@@ -1,5 +1,5 @@
 // app/api/support/route.ts
-import nodemailer from "nodemailer";
+import { sendMail } from "@/src/lib/sendMail";
 
 export const runtime = "nodejs";
 
@@ -43,15 +43,6 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as Payload;
 
-    const to = mustEnv("SUPPORT_TO_EMAIL");
-    const host = mustEnv("SMTP_HOST");
-    const port = Number(mustEnv("SMTP_PORT"));
-    const user = mustEnv("SMTP_USER");
-    const pass = mustEnv("SMTP_PASS");
-    const from = clean(process.env.SMTP_FROM) || user;
-
-    const secure =
-      process.env.SMTP_SECURE != null ? boolish(process.env.SMTP_SECURE) : port === 465;
 
     const title = clean(body.title) || "Articolo";
     const id = clean(body.id);
@@ -90,17 +81,7 @@ export async function POST(req: Request) {
 
     const text = lines.join("\n");
 
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: { user, pass },
-    });
-
-    // utile per capire subito auth/connessione
-    await transporter.verify();
-
-    await transporter.sendMail({ from, to, subject, text });
+    await sendMail({ subject, text });
 
     return Response.json({ ok: true });
   } catch (err: any) {

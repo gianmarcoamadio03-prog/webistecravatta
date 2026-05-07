@@ -1,5 +1,5 @@
 // app/api/report-item/route.ts
-import nodemailer from "nodemailer";
+import { sendMail } from "@/src/lib/sendMail";
 
 export const runtime = "nodejs";
 
@@ -26,12 +26,6 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Payload;
 
-    const to = mustEnv("SUPPORT_TO_EMAIL");
-    const host = mustEnv("SMTP_HOST");
-    const port = Number(mustEnv("SMTP_PORT"));
-    const user = mustEnv("SMTP_USER");
-    const pass = mustEnv("SMTP_PASS");
-    const from = process.env.SMTP_FROM || user;
 
     const title = (body.title || "").trim() || "Articolo (titolo mancante)";
     const slug = (body.slug || "").trim();
@@ -72,20 +66,7 @@ export async function POST(req: Request) {
       </div>
     `;
 
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465, // 465 = SSL
-      auth: { user, pass },
-    });
-
-    await transporter.sendMail({
-      from,
-      to,
-      subject,
-      text,
-      html,
-    });
+    await sendMail({ subject, text, html });
 
     return Response.json({ ok: true });
   } catch (err: any) {

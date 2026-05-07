@@ -9,6 +9,13 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+  /* ── Brand accent ── */
+  --brand-1: #c8a97e;        /* gold warm */
+  --brand-2: #9b7fff;        /* violet */
+  --brand-gradient: linear-gradient(135deg, #c8a97e 0%, #9b7fff 100%);
+  --brand-glow: 0 0 32px rgba(200,169,126,0.18);
+
   }
 
   *,
@@ -92,7 +99,7 @@
     scroll-snap-stop: normal;
 
     /* desktop/tablet spacing */
-    padding: clamp(260px, 26vh, 520px) 0;
+    padding: clamp(80px, 10vh, 160px) 0;
 
     position: relative;
     overflow: visible;
@@ -113,7 +120,7 @@
   }
 
   .cc-section + .cc-section {
-    margin-top: clamp(90px, 14vh, 260px);
+    margin-top: 0;
   }
 
   .cc-section--hero {
@@ -149,7 +156,7 @@
     position: absolute;
     left: 0;
     right: 0;
-    height: 120px;
+    height: 40px;
     pointer-events: none;
     z-index: 1;
   }
@@ -372,6 +379,31 @@
   /* ======================================================
      PARALLAX DECOR — SINGLE SOURCE OF TRUTH
      ====================================================== */
+
+
+
+
+
+  .sheet-card, .sellers-card, [class*="card"] {
+    box-shadow: var(--brand-glow);
+    border-color: rgba(200,169,126,0.15);
+  }
+
+
+  .ps-title {
+    color: #f0e6d3;
+  }
+
+  .ps-eyebrow {
+    color: #c8a97e;
+    letter-spacing: 0.35em;
+  }
+
+  .cc-home {
+    background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(200,169,126,0.07) 0%, transparent 70%),
+                radial-gradient(ellipse 60% 40% at 80% 80%, rgba(155,127,255,0.05) 0%, transparent 60%),
+                #0a0a0a;
+  }
 
   .ps-section {
     position: relative;

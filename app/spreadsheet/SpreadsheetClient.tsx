@@ -259,7 +259,10 @@ export default function SpreadsheetClient({
   const [sellerFilter, setSellerFilter] = useState<string>(cleanFilter(initialFilters?.seller));
   const [brandFilter, setBrandFilter] = useState<string>(cleanFilter(initialFilters?.brand));
   const [categoryFilter, setCategoryFilter] = useState<string>(cleanFilter(initialFilters?.category));
-  const [sortMode, setSortMode] = useState<SortMode>("default");
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+  const s = searchParams?.get("sort");
+  return s === "price_desc" || s === "price_asc" ? s : "default";
+});
   const [showTop, setShowTop] = useState(false);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -276,13 +279,14 @@ export default function SpreadsheetClient({
 
   const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function buildHref(nextPage: number, next?: Partial<{ q: string; seller: string; brand: string; category: string }>) {
+  function buildHref(nextPage: number, next?: Partial<{ q: string; seller: string; brand: string; category: string; sort: SortMode }>) {
     const params = new URLSearchParams();
 
-    const qv = (next?.q ?? q).trim();
-    const sv = (next?.seller ?? sellerFilter).trim();
-    const bv = (next?.brand ?? brandFilter).trim();
-    const cv = (next?.category ?? categoryFilter).trim();
+    const qv   = (next?.q        ?? q).trim();
+    const sv   = (next?.seller   ?? sellerFilter).trim();
+    const bv   = (next?.brand    ?? brandFilter).trim();
+    const cv   = (next?.category ?? categoryFilter).trim();
+    const sort = next?.sort ?? sortMode;
 
     if (nextPage > 1) params.set("page", String(nextPage));
 
@@ -296,6 +300,7 @@ export default function SpreadsheetClient({
     if (sv && sv !== "all") params.set("seller", sv);
     if (bv && bv !== "all") params.set("brand", bv);
     if (cv && cv !== "all") params.set("category", cv);
+    if (sort !== "default") params.set("sort", sort);
 
     const qs = params.toString();
     return qs ? `/spreadsheet?${qs}` : "/spreadsheet";
@@ -303,7 +308,7 @@ export default function SpreadsheetClient({
 
   function go(
     nextPage: number,
-    next?: Partial<{ q: string; seller: string; brand: string; category: string }>,
+    next?: Partial<{ q: string; seller: string; brand: string; category: string; sort: SortMode }>,
     mode: "push" | "replace" = "push"
   ) {
     const href = buildHref(nextPage, next);
@@ -514,10 +519,11 @@ export default function SpreadsheetClient({
   }, []);
 
   const hrefBase = {
-    q: initialFilters?.q ?? "",
-    seller: cleanFilter(initialFilters?.seller),
-    brand: cleanFilter(initialFilters?.brand),
-    category: cleanFilter(initialFilters?.category),
+    q:        q.trim(),
+    seller:   sellerFilter,
+    brand:    brandFilter,
+    category: categoryFilter,
+    sort:     sortMode,
   };
 
   const prevHref = page > 1 ? buildHref(page - 1, hrefBase) : null;
@@ -629,7 +635,9 @@ export default function SpreadsheetClient({
 
   function applyPickerValue(kind: PickerKind, value: string) {
     if (kind === "sort") {
-      setSortMode(value as SortMode);
+      const s = value as SortMode;
+      setSortMode(s);
+      go(1, { sort: s }, "push");
       closePicker();
       return;
     }
@@ -839,7 +847,7 @@ export default function SpreadsheetClient({
                     />
                   ) : null}
 
-                  {sortMode !== "default" ? <FilterChip label={sortLabel} onClear={() => setSortMode("default")} /> : null}
+                  {sortMode !== "default" ? <FilterChip label={sortLabel} onClear={() => { setSortMode("default"); go(1, { sort: "default" }, "replace"); }} /> : null}
                 </div>
               </div>
             ) : null}
@@ -899,7 +907,11 @@ export default function SpreadsheetClient({
               <div className="w-full max-w-[1200px] flex flex-wrap items-center justify-center gap-2">
                 <select
                   value={sortMode}
-                  onChange={(e) => setSortMode(e.target.value as SortMode)}
+                  onChange={(e) => {
+                    const s = e.target.value as SortMode;
+                    setSortMode(s);
+                    go(1, { sort: s }, "replace");
+                  }}
                   style={{ colorScheme: "dark" }}
                   className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
                 >
@@ -1007,7 +1019,7 @@ export default function SpreadsheetClient({
                       }}
                     />
                   ) : null}
-                  {sortMode !== "default" ? <FilterChip label={sortLabel} onClear={() => setSortMode("default")} /> : null}
+                  {sortMode !== "default" ? <FilterChip label={sortLabel} onClear={() => { setSortMode("default"); go(1, { sort: "default" }, "replace"); }} /> : null}
                 </div>
               </div>
             ) : null}

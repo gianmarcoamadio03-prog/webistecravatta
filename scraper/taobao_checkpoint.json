@@ -1,0 +1,7 @@
+{
+  "done": {
+    "item||https://item.taobao.com/item.htm?id=834358480793": 1
+  },
+  "updatedAt": "2026-03-12T22:57:13.844Z",
+  "version": "2026-03-12 | taobao: gallery debug fix | thumbnails/main/gallery fallback | no image blocking | slug fix | single-item checkpoint fix"
+}
