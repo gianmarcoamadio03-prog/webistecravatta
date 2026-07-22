@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toUsFansProductUrl, toMulebuyProductUrl } from "../../data/affiliate";
 import { imgProxy, type ImgSize } from "@/src/lib/imgProxy";
+import { toggleFavorite, isFavorite, getFavoritesCount, subscribeFavorites } from "@/src/lib/favorites";
 
 type SheetItemLite = {
   id?: string;
@@ -228,6 +229,19 @@ function ChevronDown({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function HeartIcon({ filled, className = "h-4 w-4" }: { filled: boolean; className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill={filled ? "currentColor" : "none"} aria-hidden="true">
+      <path
+        d="M12 20.5s-7.5-4.6-9.8-9.1C.6 8 2 4.7 5.2 3.7 7.6 3 9.9 4 12 6.4 14.1 4 16.4 3 18.8 3.7c3.2 1 4.6 4.3 3 7.7-2.3 4.5-9.8 9.1-9.8 9.1z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function SpreadsheetClient({
   items,
   page,
@@ -268,6 +282,18 @@ export default function SpreadsheetClient({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState<PickerKind | null>(null);
   const [pickerQuery, setPickerQuery] = useState("");
+
+  const [favCount, setFavCount] = useState(0);
+  const [, setFavTick] = useState(0);
+
+  useEffect(() => {
+    setFavCount(getFavoritesCount());
+    const unsub = subscribeFavorites((list) => {
+      setFavCount(list.length);
+      setFavTick((n) => n + 1);
+    });
+    return unsub;
+  }, []);
 
   const order: "default" | "random" = searchParams?.get("order") === "default" ? "default" : "random";
   const shuffleKey = searchParams?.get("shuffle") ?? "";
@@ -549,6 +575,12 @@ export default function SpreadsheetClient({
     "whitespace-nowrap",
   ].join(" ");
 
+  const favoritesPillClass = [
+    "h-10 sm:h-9 px-3.5 rounded-full inline-flex items-center justify-center gap-2",
+    "border border-white/10 bg-white/5 hover:bg-white/8",
+    "text-[12px] text-white/85 transition whitespace-nowrap",
+  ].join(" ");
+
   const pagerClass =
     "flex items-center h-11 rounded-full border border-white/10 bg-black/45 backdrop-blur-xl overflow-hidden shadow-[0_20px_90px_rgba(0,0,0,0.45)]";
 
@@ -560,7 +592,7 @@ export default function SpreadsheetClient({
     "h-10 w-full rounded-full pl-4 pr-10 bg-white/5 border border-white/10 text-[16px] text-white/90 outline-none focus:border-white/25";
 
   const pillSecondary =
-    "h-10 w-full rounded-full border border-white/10 bg-white/5 hover:bg-white/8 text-[13px] text-white/85 transition inline-flex items-center justify-center";
+    "h-10 w-full rounded-full border border-white/10 bg-white/5 hover:bg-white/8 text-[13px] text-white/85 transition inline-flex items-center justify-center gap-1.5";
   const panel =
     "rounded-3xl border border-white/10 bg-white/[0.03] shadow-[0_20px_90px_rgba(0,0,0,0.45)] overflow-hidden";
   const panelInner = "p-3";
@@ -706,6 +738,25 @@ export default function SpreadsheetClient({
     }
   };
 
+  function handleToggleFavorite(
+    e: React.MouseEvent,
+    x: { slug: string; title: string; cover?: string; seller?: string; brand?: string; category?: string; price?: number | null; mulebuy?: string }
+  ) {
+    e.stopPropagation();
+    toggleFavorite({
+      slug: x.slug,
+      title: x.title,
+      cover: x.cover,
+      seller: x.seller,
+      brand: x.brand,
+      category: x.category,
+      price: x.price ?? null,
+      mulebuy: x.mulebuy || undefined,
+    });
+    setFavCount(getFavoritesCount());
+    setFavTick((n) => n + 1);
+  }
+
   return (
     <div className="min-h-screen w-full">
       {/* STICKY TOP */}
@@ -751,7 +802,7 @@ export default function SpreadsheetClient({
               <div className="h-10 w-10" aria-hidden="true" />
             </div>
 
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => setFiltersOpen((v) => !v)}
@@ -760,6 +811,11 @@ export default function SpreadsheetClient({
               >
                 {filtersOpen ? "Chiudi filtri" : "Filtri"}
               </button>
+
+              <Link href="/favorites" className={pillSecondary} title="I tuoi preferiti">
+                <HeartIcon filled={favCount > 0} className={favCount > 0 ? "h-4 w-4 text-rose-300" : "h-4 w-4"} />
+                {favCount > 0 ? favCount : "Pref."}
+              </Link>
 
               <button type="button" onClick={shuffleNow} className={shufflePrimaryClass} title="Mischia articoli">
                 <ShuffleIcon className="h-[18px] w-[18px]" />
@@ -1033,6 +1089,16 @@ export default function SpreadsheetClient({
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                <Link href="/favorites" className={favoritesPillClass} title="I tuoi preferiti">
+                  <HeartIcon filled={favCount > 0} className={favCount > 0 ? "h-4 w-4 text-rose-300" : "h-4 w-4"} />
+                  Preferiti
+                  {favCount > 0 ? (
+                    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/15 text-[10px] font-semibold text-white">
+                      {favCount}
+                    </span>
+                  ) : null}
+                </Link>
+
                 <button type="button" onClick={shuffleNow} className={shufflePrimaryClass} title="Mischia articoli">
                   <ShuffleIcon className="h-[18px] w-[18px]" />
                   Shuffle
@@ -1078,6 +1144,7 @@ export default function SpreadsheetClient({
               {filtered.map((x) => {
                 const meta = [x.seller, x.category].filter(Boolean).join(" • ");
                 const img = x.cover ? coverSrc(x.cover, "small") : "";
+                const fav = isFavorite(x.slug);
 
                 return (
                   <div
@@ -1098,6 +1165,16 @@ export default function SpreadsheetClient({
                       "focus:outline-none focus:ring-2 focus:ring-white/20",
                     ].join(" ")}
                   >
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleFavorite(e, x)}
+                      className="absolute right-3 top-3 z-10 h-8 w-8 rounded-full border border-white/15 bg-black/40 backdrop-blur flex items-center justify-center text-white/80 hover:text-rose-300 hover:bg-black/55 transition"
+                      title="Aggiungi/Rimuovi dai preferiti"
+                      aria-label="Preferiti"
+                    >
+                      <HeartIcon filled={fav} className={fav ? "h-4 w-4 text-rose-300" : "h-4 w-4"} />
+                    </button>
+
                     <div
                       className="absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none"
                       style={{
@@ -1143,8 +1220,7 @@ export default function SpreadsheetClient({
                       )}
 
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <AgentButton href={x.usfans || undefined} label="USFans" accent />
-                        <AgentButton href={x.mulebuy || undefined} label="MuleBuy" />
+                        <AgentButton href={x.mulebuy || undefined} label="MuleBuy" accent />
                       </div>
                     </div>
                   </div>

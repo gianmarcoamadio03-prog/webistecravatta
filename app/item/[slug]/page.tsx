@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import Gallery from "./Gallery";
 import SupportButton from "./SupportButton";
 import BackLinkClient from "./BackLinkClient";
+import FavoriteButton from "./FavoriteButton";
 
 import { getItemBySlugOrId } from "@/data/itemsFromSheet";
 import { toUsFansProductUrl, toMulebuyProductUrl } from "@/data/affiliate";
@@ -108,7 +109,6 @@ function getDirectAgentUrl(item: SheetItem, agent: "usfans" | "mulebuy") {
   return "";
 }
 
-/** ✅ pill compatte, wrap pulito (anti clipping) */
 function MetaPill({ children }: { children: React.ReactNode }) {
   return (
     <span
@@ -216,6 +216,7 @@ export default async function ItemPage({
       ? found.rowNumber
       : null;
 
+  const itemSlug = safeStr(found.slug) || wanted;
   const bottomPad = "pb-[calc(130px+env(safe-area-inset-bottom))] lg:pb-10";
 
   return (
@@ -253,11 +254,27 @@ export default async function ItemPage({
             {title}
           </h1>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            {brand ? <MetaPill>Brand: {brand}</MetaPill> : null}
-            {seller ? <MetaPill>Seller: {seller}</MetaPill> : null}
-            {category ? <MetaPill>Categoria: {category}</MetaPill> : null}
-            <MetaPill>Foto: {pics.length || 0}</MetaPill>
+          {/* Pills a sinistra, FavoriteButton pushato a destra */}
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {brand ? <MetaPill>Brand: {brand}</MetaPill> : null}
+              {seller ? <MetaPill>Seller: {seller}</MetaPill> : null}
+              {category ? <MetaPill>Categoria: {category}</MetaPill> : null}
+              <MetaPill>Foto: {pics.length || 0}</MetaPill>
+            </div>
+            <div className="ml-auto shrink-0">
+              <FavoriteButton
+                slug={itemSlug}
+                title={title}
+                cover={pics[0] || undefined}
+                seller={seller || undefined}
+                brand={brand || undefined}
+                category={category || undefined}
+                price={eur}
+                mulebuy={mulebuyUrl || undefined}
+                size="sm"
+              />
+            </div>
           </div>
         </header>
 
@@ -279,7 +296,7 @@ export default async function ItemPage({
                 <SupportButton
                   title={title}
                   id={safeStr(found.id) || wanted}
-                  slug={safeStr(found.slug) || wanted}
+                  slug={itemSlug}
                   brand={brand || undefined}
                   category={category || undefined}
                   seller={seller || undefined}
@@ -305,16 +322,20 @@ export default async function ItemPage({
 
               <div className="mt-4 grid gap-2">
                 <AgentBtn
-                  href={usfansUrl || undefined}
-                  label="USFans"
-                  iconSrc="/agents/usfans.png"
-                  variant="primary"
-                />
-                <AgentBtn
                   href={mulebuyUrl || undefined}
                   label="MuleBuy"
                   iconSrc="/agents/mulebuy.png"
-                  variant="secondary"
+                  variant="primary"
+                />
+                <FavoriteButton
+                  slug={itemSlug}
+                  title={title}
+                  cover={pics[0] || undefined}
+                  seller={seller || undefined}
+                  brand={brand || undefined}
+                  category={category || undefined}
+                  price={eur}
+                  mulebuy={mulebuyUrl || undefined}
                 />
               </div>
 
@@ -326,7 +347,7 @@ export default async function ItemPage({
                 <SupportButton
                   title={title}
                   id={safeStr(found.id) || wanted}
-                  slug={safeStr(found.slug) || wanted}
+                  slug={itemSlug}
                   brand={brand || undefined}
                   category={category || undefined}
                   seller={seller || undefined}
@@ -339,6 +360,7 @@ export default async function ItemPage({
         </div>
       </div>
 
+      {/* Mobile bottom bar */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-black/72 backdrop-blur-xl">
         <div
           className={[
@@ -357,18 +379,21 @@ export default async function ItemPage({
 
             <div className="mt-2 grid grid-cols-2 gap-2">
               <AgentBtn
-                href={usfansUrl || undefined}
-                label="USFans"
-                iconSrc="/agents/usfans.png"
-                variant="primary"
-                size="sm"
-              />
-              <AgentBtn
                 href={mulebuyUrl || undefined}
                 label="MuleBuy"
                 iconSrc="/agents/mulebuy.png"
-                variant="secondary"
+                variant="primary"
                 size="sm"
+              />
+              <FavoriteButton
+                slug={itemSlug}
+                title={title}
+                cover={pics[0] || undefined}
+                seller={seller || undefined}
+                brand={brand || undefined}
+                category={category || undefined}
+                price={eur}
+                mulebuy={mulebuyUrl || undefined}
               />
             </div>
           </div>
