@@ -2447,3 +2447,63 @@
 [data-page="quality-check"] .ps-people {
   display: none !important;
 }
+
+/* === VIGORBUY INTERNAL PRODUCT BUTTON === */
+
+.it-agentbtn--mulebuy,
+.it-agentbtn--vigorbuy,
+.it-agentbtn[href*="vigorbuy.cc"],
+.it-agentbtn[href*="vigorbuy.com"] {
+  background:
+    linear-gradient(
+      135deg,
+      #ff5575 0%,
+      #f60045 100%
+    ) !important;
+
+  border-color: rgba(255, 105, 135, 0.48) !important;
+
+  color: #ffffff !important;
+
+  box-shadow:
+    0 8px 28px rgba(246, 0, 69, 0.24),
+    inset 0 1px 0 rgba(255,255,255,0.18) !important;
+}
+
+.it-agentbtn--mulebuy:hover,
+.it-agentbtn--vigorbuy:hover,
+.it-agentbtn[href*="vigorbuy.cc"]:hover,
+.it-agentbtn[href*="vigorbuy.com"]:hover {
+  filter: brightness(1.08);
+
+  box-shadow:
+    0 10px 34px rgba(246, 0, 69, 0.36),
+    inset 0 1px 0 rgba(255,255,255,0.22) !important;
+}
+
+
+/* MOBILE */
+
+.it-dockBtn--mulebuy,
+.it-dockBtn--vigorbuy,
+.it-dockBtn[href*="vigorbuy.cc"],
+.it-dockBtn[href*="vigorbuy.com"] {
+  background:
+    linear-gradient(
+      135deg,
+      #ff5575 0%,
+      #f60045 100%
+    ) !important;
+
+  border-color: rgba(255, 105, 135, 0.48) !important;
+
+  color: #ffffff !important;
+
+  box-shadow:
+    0 8px 28px rgba(246, 0, 69, 0.24) !important;
+}
+
+.it-agentbtn[href*="vigorbuy"] .it-agentbtn-text,
+.it-dockBtn[href*="vigorbuy"] .it-agentbtn-text {
+  color: #ffffff !important;
+}

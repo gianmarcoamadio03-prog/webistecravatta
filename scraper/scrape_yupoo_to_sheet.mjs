@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { fileURLToPath } from "url";
 import readline from "node:readline";
 import OpenAI from "openai";
+import { createHash, randomUUID } from "node:crypto";
 
 // =====================
 // ESM __dirname + root
@@ -25,7 +26,7 @@ dotenv.config({ path: path.join(PROJECT_ROOT, ".env.local") });
 // ENV / CONFIG
 // =====================
 const VERSION =
-  "2026-02-20 | flush+checkpoint+resume + skip-existing-preopen + disk-ai-cache + concurrency + queued-append fix + 1688SHOP";
+  "2026-09-04 | VigorBuy + robust prices/title cleanup + source selector auto/taobao/weidian + flush/checkpoint/resume";
 
 const SHEET_ID = (process.env.SHEET_ID || "").trim();
 const SHEET_TAB = (process.env.SHEET_TAB || "items").trim();
@@ -78,6 +79,52 @@ const REAL_UA =
   (process.env.USER_AGENT || "").trim() ||
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 const ACCEPT_LANG = (process.env.ACCEPT_LANGUAGE || "it-IT,it;q=0.9,en;q=0.8").trim();
+
+// Price extraction
+// Alcuni seller Yupoo scrivono i prezzi in USD (es. "32$") invece che in CNY.
+// Il Google Sheet continua a ricevere source_price_cny, quindi USD viene convertito in CNY.
+const SCRAPER_USD_CNY_RATE = Math.max(
+  0.1,
+  Number(String(process.env.SCRAPER_USD_CNY_RATE || "7.10").trim()) || 7.10
+);
+const SCRAPER_PRICE_DEBUG =
+  String(process.env.SCRAPER_PRICE_DEBUG || "1").trim() !== "0";
+
+// =====================
+// VIGORBUY
+// Weidian -> VigorBuy short link
+// =====================
+const VIGORBUY_ENABLED =
+  String(process.env.VIGORBUY_ENABLED || "1").trim() !== "0";
+
+// Referral fisso usato per TUTTI i link VigorBuy generati.
+const VIGORBUY_INVITE_CODE = "nPxRowk9";
+
+// Valori usati dal frontend VigorBuy per firmare lo shortener.
+const VIGORBUY_SIGN_KEY = "980683EF-46C6-47D5-80C1-7B2CB6B2D0BF";
+const VIGORBUY_SIGN_VERSION = "vigorbuy-production-web-1.0";
+const VIGORBUY_SHORTEN_API =
+  "https://api.vigorbuy.com/vigorbuy_wallet/pub/shorten/create";
+
+const VIGORBUY_TIMEOUT_MS = Math.max(
+  3000,
+  Number(String(process.env.VIGORBUY_TIMEOUT_MS || "15000").trim()) || 15000
+);
+
+const VIGORBUY_RETRIES = Math.max(
+  1,
+  Number(String(process.env.VIGORBUY_RETRIES || "3").trim()) || 3
+);
+
+// Cache per non richiedere due volte lo stesso short-link nella stessa esecuzione.
+const _vigorbuyShortCache = new Map();
+
+const vigorbuyStats = {
+  ok: 0,
+  fail: 0,
+  cacheHit: 0,
+  skippedNonWeidian: 0,
+};
 
 // AI detect
 const SCRAPER_DETECT_AI_RAW = String(process.env.SCRAPER_DETECT_AI || "0").trim();
@@ -145,6 +192,8 @@ console.log("🧾 FLUSH_EVERY:", SCRAPER_FLUSH_EVERY);
 console.log("💾 CHECKPOINT:", absPathFromRoot(SCRAPER_CHECKPOINT_FILE), "| resume:", SCRAPER_RESUME ? "ON" : "OFF");
 console.log("💾 AI_CACHE:", absPathFromRoot(SCRAPER_AI_CACHE_FILE));
 console.log("🤖 AI DETECT (global):", SCRAPER_DETECT_EFFECTIVE ? `ON (${SCRAPER_DETECT_MODEL})` : "OFF");
+console.log("💱 USD->CNY:", SCRAPER_USD_CNY_RATE);
+console.log("💰 PRICE DEBUG:", SCRAPER_PRICE_DEBUG ? "ON" : "OFF");
 console.log("====================================");
 
 // =====================
@@ -1097,6 +1146,162 @@ function canonicalizeWeidianItemUrl(url) {
   return `https://weidian.com/item.html?itemID=${id}`;
 }
 
+// =====================
+// VIGORBUY HELPERS
+// =====================
+function buildVigorBuyLongUrlFromWeidian(url) {
+  const itemId = extractWeidianItemId(url);
+  if (!itemId) return "";
+
+  return (
+    `https://vigorbuy.com/product/2/${itemId}` +
+    `?utm_source=website` +
+    `&utm_medium=share` +
+    `&utm_campaign=product_details` +
+    `&utm_content=${itemId}` +
+    `&inviteCode=${encodeURIComponent(VIGORBUY_INVITE_CODE)}`
+  );
+}
+
+function buildVigorBuySignature(nonce) {
+  return createHash("md5")
+    .update(`${String(nonce || "")}${VIGORBUY_SIGN_KEY}`, "utf8")
+    .digest("hex");
+}
+
+function isValidVigorBuyShortUrl(url) {
+  try {
+    const u = new URL(String(url || "").trim());
+    return (
+      u.protocol === "https:" &&
+      u.hostname.toLowerCase() === "vigorbuy.cc" &&
+      /^\/[A-Za-z0-9]+\/?$/.test(u.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function createVigorBuyShortUrl(weidianUrl) {
+  if (!VIGORBUY_ENABLED) return "";
+
+  const itemId = extractWeidianItemId(weidianUrl);
+  if (!itemId) return "";
+
+  const cacheKey = `${itemId}||${VIGORBUY_INVITE_CODE}`;
+  const cached = _vigorbuyShortCache.get(cacheKey);
+
+  if (cached) {
+    vigorbuyStats.cacheHit += 1;
+    return cached;
+  }
+
+  const longUrl = buildVigorBuyLongUrlFromWeidian(weidianUrl);
+  if (!longUrl) return "";
+
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= VIGORBUY_RETRIES; attempt++) {
+    const nonce = randomUUID().toLowerCase();
+    const signature = buildVigorBuySignature(nonce);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), VIGORBUY_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(VIGORBUY_SHORTEN_API, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          "x-nonce": nonce,
+          "x-signature": signature,
+          "x-version": VIGORBUY_SIGN_VERSION,
+          "x-platform": "web",
+          language: "it",
+          timezone: "Europe/Rome",
+        },
+        body: JSON.stringify({ url: longUrl }),
+        signal: controller.signal,
+      });
+
+      const raw = await response.text();
+
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(
+          `VigorBuy risposta JSON non valida (HTTP ${response.status})`
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `VigorBuy HTTP ${response.status}: ${String(data?.msg || raw).slice(0, 180)}`
+        );
+      }
+
+      const shortUrl = String(data?.data?.url || "").trim();
+
+      if (Number(data?.code) !== 0 || !isValidVigorBuyShortUrl(shortUrl)) {
+        throw new Error(
+          `VigorBuy shorten rifiutato: code=${data?.code} msg=${String(data?.msg || "")}`
+        );
+      }
+
+      _vigorbuyShortCache.set(cacheKey, shortUrl);
+      vigorbuyStats.ok += 1;
+
+      console.log(`🔗 VigorBuy ${itemId} -> ${shortUrl}`);
+      return shortUrl;
+    } catch (err) {
+      lastError = err;
+
+      if (attempt < VIGORBUY_RETRIES) {
+        const wait = Math.min(8000, 700 * Math.pow(2, attempt - 1));
+        console.log(
+          `⚠️ VigorBuy retry ${attempt}/${VIGORBUY_RETRIES} item=${itemId}: ${String(
+            err?.message || err
+          ).split("\n")[0]}`
+        );
+        await sleep(wait);
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  vigorbuyStats.fail += 1;
+  console.log(
+    `⚠️ VigorBuy conversion failed item=${itemId}; mantengo Weidian originale. -> ${String(
+      lastError?.message || lastError || "unknown"
+    ).split("\n")[0]}`
+  );
+
+  return "";
+}
+
+async function convertExternalSourceToVigorBuy(sourceUrl) {
+  const source = String(sourceUrl || "").trim();
+  if (!source) return "";
+
+  // La formula /product/2/{itemID} è quella verificata per Weidian.
+  // Taobao e 1688 restano invariati.
+  const itemId = extractWeidianItemId(source);
+
+  if (!itemId) {
+    vigorbuyStats.skippedNonWeidian += 1;
+    return source;
+  }
+
+  const shortUrl = await createVigorBuyShortUrl(source);
+
+  // Se lo shortener fallisce, non perdiamo il prodotto:
+  // lasciamo nello Sheet il link Weidian originale.
+  return shortUrl || source;
+}
+
 function extractTaobaoItemId(url) {
   try {
     const u = new URL(url);
@@ -1173,33 +1378,125 @@ async function resolveFinalUrl(context, url) {
   return final;
 }
 
-async function pickPreferredSourceUrl(context, rawLinks) {
-  const links = dedupePreserveOrder((rawLinks || []).map((x) => String(x || "").trim()).filter(Boolean));
-  const decoded = links.map((u) => decodeYupooExternalUrl(u)).map((u) => String(u || "").trim());
 
-  for (const u of decoded) {
-    if (isWeidianItemUrl(u)) return canonicalizeWeidianItemUrl(u);
-    if (u.includes("v.weidian.com/item.html")) return canonicalizeWeidianItemUrl(u);
-  }
+function normalizeSourcePreference(value) {
+  const s = String(value || "").trim().toLowerCase();
 
-  for (const u of decoded) {
-    if (isTaobaoItemUrl(u)) return canonicalizeTaobaoItemUrl(u);
-  }
+  if (!s || s === "auto" || s === "automatic" || s === "automatico") return "auto";
+  if (s === "taobao" || s === "tb") return "taobao";
+  if (s === "weidian" || s === "wd") return "weidian";
 
-  for (const u of decoded) {
-    if (is1688OfferUrl(u)) return canonicalize1688OfferUrl(u);
-  }
+  // Valore sconosciuto: non blocchiamo il job, torniamo ad AUTO.
+  return "auto";
+}
 
-  for (const u0 of decoded) {
-    if (!isShortRedirectUrl(u0)) continue;
-    const resolved = await resolveFinalUrl(context, u0);
-    const u = decodeYupooExternalUrl(resolved || u0);
-    if (isWeidianItemUrl(u)) return canonicalizeWeidianItemUrl(u);
-    if (isTaobaoItemUrl(u)) return canonicalizeTaobaoItemUrl(u);
-    if (is1688OfferUrl(u)) return canonicalize1688OfferUrl(u);
-  }
+function detectSourcePlatform(url) {
+  const s = String(url || "").trim();
+  if (!s) return "";
+
+  if (isTaobaoItemUrl(s)) return "taobao";
+  if (isWeidianItemUrl(s) || s.includes("v.weidian.com/item.html")) return "weidian";
+  if (is1688OfferUrl(s)) return "1688";
 
   return "";
+}
+
+async function pickPreferredSourceUrl(context, rawLinks, sourcePreference = "auto") {
+  const preference = normalizeSourcePreference(sourcePreference);
+
+  const links = dedupePreserveOrder(
+    (rawLinks || [])
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+  );
+
+  const decoded = links
+    .map((u) => decodeYupooExternalUrl(u))
+    .map((u) => String(u || "").trim())
+    .filter(Boolean);
+
+  const directTaobao = [];
+  const directWeidian = [];
+  const direct1688 = [];
+  const shortLinks = [];
+
+  for (const u of decoded) {
+    if (isTaobaoItemUrl(u)) {
+      directTaobao.push(canonicalizeTaobaoItemUrl(u));
+      continue;
+    }
+
+    if (isWeidianItemUrl(u) || u.includes("v.weidian.com/item.html")) {
+      directWeidian.push(canonicalizeWeidianItemUrl(u));
+      continue;
+    }
+
+    if (is1688OfferUrl(u)) {
+      direct1688.push(canonicalize1688OfferUrl(u));
+      continue;
+    }
+
+    if (isShortRedirectUrl(u)) shortLinks.push(u);
+  }
+
+  // Se la piattaforma è forzata e abbiamo già un link diretto,
+  // non perdiamo tempo a risolvere altri short-link.
+  if (preference === "taobao" && directTaobao.length) return directTaobao[0];
+  if (preference === "weidian" && directWeidian.length) return directWeidian[0];
+
+  // AUTO preferisce TAOBAO. Quindi se Taobao è già diretto,
+  // lo scegliamo immediatamente.
+  if (preference === "auto" && directTaobao.length) return directTaobao[0];
+
+  // Risolviamo gli short-link perché un Taobao può essere nascosto dietro m.tb.cn
+  // e un Weidian dietro youshop10.
+  const resolvedTaobao = [];
+  const resolvedWeidian = [];
+  const resolved1688 = [];
+
+  for (const u0 of shortLinks) {
+    const resolved = await resolveFinalUrl(context, u0);
+    const u = String(decodeYupooExternalUrl(resolved || u0) || "").trim();
+
+    if (isTaobaoItemUrl(u)) {
+      resolvedTaobao.push(canonicalizeTaobaoItemUrl(u));
+      continue;
+    }
+
+    if (isWeidianItemUrl(u) || u.includes("v.weidian.com/item.html")) {
+      resolvedWeidian.push(canonicalizeWeidianItemUrl(u));
+      continue;
+    }
+
+    if (is1688OfferUrl(u)) {
+      resolved1688.push(canonicalize1688OfferUrl(u));
+    }
+  }
+
+  // FORZATURA STRETTA:
+  // source=taobao  -> solo Taobao, altrimenti ""
+  // source=weidian -> solo Weidian, altrimenti ""
+  if (preference === "taobao") {
+    return resolvedTaobao[0] || "";
+  }
+
+  if (preference === "weidian") {
+    return resolvedWeidian[0] || "";
+  }
+
+  // AUTO:
+  // 1. Taobao
+  // 2. Weidian
+  // 3. 1688 come fallback per non rompere il supporto già esistente
+  return (
+    directTaobao[0] ||
+    resolvedTaobao[0] ||
+    directWeidian[0] ||
+    resolvedWeidian[0] ||
+    direct1688[0] ||
+    resolved1688[0] ||
+    ""
+  );
 }
 
 // =====================
@@ -1563,7 +1860,9 @@ function buildDisplayName(titleRaw, brandOverride = "", forcedType = "") {
   const detected = detectProductTypeFromTitle(titleRaw);
   const finalType = forced && ALLOWED_TYPES.has(forced) ? forced : detected;
 
-  const tr = String(titleRaw || "").trim();
+  // Il prezzo può essere parte del titolo Yupoo (es. "208¥DIPLOMATIC ZIPSET").
+  // Per il nome pubblico usiamo il titolo ripulito, mantenendo i numeri del modello.
+  const tr = stripPriceTokensFromTitle(titleRaw);
   const noUsefulText = tr.length < 3;
 
   if (brand && finalType && finalType !== "OTHER") return `${brand.toUpperCase()} ${finalType}`;
@@ -1586,13 +1885,9 @@ function splitBaseAndIndex(name) {
     return { base: base || n, idx: Number.isFinite(idx) ? idx : 1 };
   }
 
-  m = n.match(/^(.*?)(?:\s+(\d+))$/);
-  if (m) {
-    const base = String(m[1] || "").trim();
-    const idx = Number(m[2] || "1");
-    return { base: base || n, idx: Number.isFinite(idx) ? idx : 1 };
-  }
-
+  // NON trattiamo un numero finale normale come indice duplicato:
+  // "Sabrina 3", "Jordan 4", "990 v6" sono nomi/modelli reali.
+  // I duplicati creati dallo scraper usano solo il formato "(2)", "(3)", ecc.
   return { base: n, idx: 1 };
 }
 
@@ -1627,32 +1922,295 @@ function makeUniqueSlug(slugBase, fallbackId, existingSlugs) {
 }
 
 // =====================
-// Price
+// PRICE + TITLE CLEANUP
 // =====================
-function parseCnyFromText(text) {
+
+function parsePriceNumber(raw) {
+  let s = String(raw ?? "").trim();
+  if (!s) return null;
+
+  s = s.replace(/\s+/g, "");
+
+  // 1,299 => 1299 / 35,5 => 35.5
+  if (/^\d{1,3}(?:,\d{3})+$/.test(s)) {
+    s = s.replace(/,/g, "");
+  } else if (/^\d+,\d+$/.test(s)) {
+    s = s.replace(",", ".");
+  }
+
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0 || n >= 100000) return null;
+  return n;
+}
+
+function roundPrice(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
+/**
+ * Restituisce prezzo + valuta SOLO quando il numero è chiaramente associato
+ * a un simbolo/codice valuta. In questo modo NON confondiamo numeri modello
+ * come "Sabrina 3", "Jordan 4", "990 v6", "2.0" con un prezzo.
+ */
+function extractMoneyFromText(text) {
   const t = String(text ?? "");
   if (!t.trim()) return null;
 
-  const patterns = [
-    /(?:¥|￥)\s*~?\s*(\d+(?:\.\d+)?)/g,
-    /(?:CNY|RMB)\s*~?\s*(\d+(?:\.\d+)?)/gi,
-    /(\d+(?:\.\d+)?)\s*元/g,
-    /\b(\d+(?:\.\d+)?)\s*Y\b/gi,
+  const groups = [
+    {
+      currency: "CNY",
+      patterns: [
+        /(\d+(?:[.,]\d+)?)\s*(?:¥|￥|元)/gi,
+        /(?:¥|￥)\s*~?\s*(\d+(?:[.,]\d+)?)/gi,
+        /(\d+(?:[.,]\d+)?)\s*(?:CNY|RMB)\b/gi,
+        /(?:CNY|RMB)\s*[:：]?\s*~?\s*(\d+(?:[.,]\d+)?)/gi,
+      ],
+    },
+    {
+      currency: "USD",
+      patterns: [
+        /(\d+(?:[.,]\d+)?)\s*\$/g,
+        /(?:US\s*\$|USD)\s*[:：]?\s*~?\s*(\d+(?:[.,]\d+)?)/gi,
+        /\$\s*~?\s*(\d+(?:[.,]\d+)?)/g,
+        /(\d+(?:[.,]\d+)?)\s*(?:USD|US\s*\$)/gi,
+      ],
+    },
   ];
 
-  let candidates = [];
-  for (const re of patterns) {
-    let m;
-    while ((m = re.exec(t)) !== null) {
-      const n = Number(m[1]);
-      if (Number.isFinite(n)) candidates.push(n);
-      if (candidates.length >= 10) break;
+  const candidates = [];
+
+  for (const group of groups) {
+    for (let patternIndex = 0; patternIndex < group.patterns.length; patternIndex++) {
+      const re = group.patterns[patternIndex];
+      re.lastIndex = 0;
+
+      let m;
+      let checked = 0;
+
+      while ((m = re.exec(t)) !== null && checked < 20) {
+        checked += 1;
+        const amount = parsePriceNumber(m[1]);
+        if (!amount) continue;
+
+        const cny =
+          group.currency === "USD"
+            ? roundPrice(amount * SCRAPER_USD_CNY_RATE)
+            : roundPrice(amount);
+
+        if (!(cny > 0 && cny < 100000)) continue;
+
+        candidates.push({
+          amount,
+          currency: group.currency,
+          cny,
+          raw: String(m[0] || "").trim(),
+          index: Number(m.index || 0),
+          patternIndex,
+        });
+      }
     }
-    if (candidates.length) break;
   }
 
-  candidates = candidates.filter((n) => n > 0 && n < 10000);
-  return candidates.length ? candidates[0] : null;
+  if (!candidates.length) return null;
+
+  // Fondamentale per titoli compatti come "380¥748&COR":
+  // esistono due possibili match ("380¥" e "¥748").
+  // Il prezzo è il token che compare PRIMA nel testo, quindi scegliamo
+  // il match con indice più basso e preserviamo "748" come parte del nome.
+  candidates.sort(
+    (a, b) =>
+      a.index - b.index ||
+      a.patternIndex - b.patternIndex ||
+      String(a.raw).length - String(b.raw).length
+  );
+
+  const best = candidates[0];
+  return {
+    amount: best.amount,
+    currency: best.currency,
+    cny: best.cny,
+    raw: best.raw,
+  };
+}
+
+// Compatibilità con il resto dello scraper: ritorna direttamente CNY.
+function parseCnyFromText(text) {
+  return extractMoneyFromText(text)?.cny ?? null;
+}
+
+/**
+ * Rimuove SOLO token riconoscibili come prezzo.
+ * I numeri senza valuta restano intatti.
+ *
+ * Esempi:
+ * 208¥DIPLOMATIC ZIPSET       -> DIPLOMATIC ZIPSET
+ * 380¥748&COR URBAN SET       -> 748&COR URBAN SET
+ * 32$ XY Batch Nike Sabrina 3 -> XY Batch Nike Sabrina 3
+ * 89¥ 2.0 new cargo shorts    -> 2.0 new cargo shorts
+ */
+function stripPriceTokensFromTitle(title) {
+  let s = String(title ?? "").replace(/\u00a0/g, " ").trim();
+  if (!s) return "";
+
+  // L'ordine è intenzionale:
+  // prima NUMERO+SIMBOLO (es. 380¥748 -> rimuove 380¥ e lascia 748),
+  // poi SIMBOLO+NUMERO (es. ¥158), infine i codici valuta.
+  const patterns = [
+    /\d+(?:[.,]\d+)?\s*(?:¥|￥|元|\$)/gi,
+    /(?:US\s*\$|USD|CNY|RMB|¥|￥|\$)\s*[:：]?\s*~?\s*\d+(?:[.,]\d+)?/gi,
+    /\d+(?:[.,]\d+)?\s*(?:USD|CNY|RMB|US\s*\$)\b/gi,
+  ];
+
+  for (const re of patterns) s = s.replace(re, " ");
+
+  // pulizia lasciata dal token prezzo, senza toccare numeri/modelli rimanenti
+  s = s
+    .replace(/^[\s\-–—|:：,;·•/\\]+/, "")
+    .replace(/[\s\-–—|:：,;·•/\\]+$/, "")
+    .replace(/\s+([,.;:!?\]])/g, "$1")
+    .replace(/([\[(])\s+/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return s;
+}
+
+async function extractDedicatedPriceSignals(page) {
+  return page
+    .evaluate(() => {
+      const out = [];
+      const seen = new Set();
+
+      const add = (value, currency = "") => {
+        const v = String(value || "").replace(/\s+/g, " ").trim();
+        if (!v) return;
+
+        const cur = String(currency || "").trim().toUpperCase();
+        const combined =
+          cur && /^\d+(?:[.,]\d+)?$/.test(v)
+            ? `${cur} ${v}`
+            : v;
+
+        if (!combined || seen.has(combined)) return;
+        seen.add(combined);
+        out.push(combined);
+      };
+
+      const currency =
+        document.querySelector('meta[itemprop="priceCurrency"]')?.getAttribute("content") ||
+        document.querySelector('[itemprop="priceCurrency"]')?.getAttribute("content") ||
+        document.querySelector('[itemprop="priceCurrency"]')?.textContent ||
+        "";
+
+      const metaSelectors = [
+        'meta[itemprop="price"]',
+        'meta[property="product:price:amount"]',
+        'meta[property="og:price:amount"]',
+        'meta[name="price"]',
+      ];
+
+      for (const sel of metaSelectors) {
+        const el = document.querySelector(sel);
+        if (el) add(el.getAttribute("content") || el.getAttribute("value") || "", currency);
+      }
+
+      const elSelectors = [
+        '[itemprop="price"]',
+        '[data-price]',
+        '[data-product-price]',
+        '[class*="price"]',
+        '[id*="price"]',
+      ];
+
+      for (const sel of elSelectors) {
+        const els = Array.from(document.querySelectorAll(sel)).slice(0, 30);
+        for (const el of els) {
+          const raw =
+            el.getAttribute("data-price") ||
+            el.getAttribute("data-product-price") ||
+            el.getAttribute("content") ||
+            el.getAttribute("value") ||
+            el.textContent ||
+            "";
+
+          // Se è solo un numero, lo usiamo soltanto se la pagina dichiara la valuta.
+          if (/^\s*\d+(?:[.,]\d+)?\s*$/.test(String(raw)) && !String(currency).trim()) continue;
+          add(raw, currency);
+        }
+      }
+
+      // JSON-LD / schema.org offers
+      for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0, 20)) {
+        try {
+          const obj = JSON.parse(script.textContent || "null");
+          const stack = Array.isArray(obj) ? [...obj] : [obj];
+
+          while (stack.length) {
+            const x = stack.shift();
+            if (!x || typeof x !== "object") continue;
+
+            const offers = x.offers;
+            if (offers) {
+              const arr = Array.isArray(offers) ? offers : [offers];
+              for (const o of arr) {
+                if (!o || typeof o !== "object") continue;
+                const p = o.price ?? o.lowPrice ?? o.highPrice;
+                const c = o.priceCurrency || currency || "";
+                if (p != null && c) add(String(p), String(c));
+              }
+            }
+
+            for (const v of Object.values(x)) {
+              if (v && typeof v === "object") {
+                if (Array.isArray(v)) stack.push(...v);
+                else stack.push(v);
+              }
+            }
+
+            if (stack.length > 100) break;
+          }
+        } catch {}
+      }
+
+      return out.slice(0, 80).join(" | ");
+    })
+    .catch(() => "");
+}
+
+function choosePriceInfo(sources) {
+  for (const src of Array.isArray(sources) ? sources : []) {
+    const text = String(src?.text || "").trim();
+    if (!text) continue;
+
+    const found = extractMoneyFromText(text);
+    if (found) {
+      return {
+        ...found,
+        source: String(src?.source || "unknown"),
+      };
+    }
+  }
+  return null;
+}
+
+function logPriceResult(itemUrl, info) {
+  if (!SCRAPER_PRICE_DEBUG) return;
+
+  const id = extractAlbumId(itemUrl) || extract1688OfferId(itemUrl) || "?";
+
+  if (!info) {
+    console.log(`⚠️ PRICE missing | item=${id}`);
+    return;
+  }
+
+  const original =
+    info.currency === "USD"
+      ? `${info.amount} USD -> ${info.cny} CNY`
+      : `${info.cny} CNY`;
+
+  console.log(
+    `💰 PRICE | item=${id} | ${original} | source=${info.source}`
+  );
 }
 
 // =====================
@@ -1932,6 +2490,7 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
   const page = await context.newPage();
   const albumUrls = new Set();
   const coverByAlbum = new Map();
+  const cardTextByAlbum = new Map();
 
   let pagesDetected = 1;
   let pagesVisited = 0;
@@ -1998,6 +2557,36 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
 
         const rawImg = pickImgUrlFromAnchor(a);
 
+        // Il prezzo è spesso scritto direttamente nel nome della card categoria
+        // (es. "208¥DIPLOMATIC ZIPSET"). Conserviamo quel testo come fallback.
+        const cardCandidates = [
+          a,
+          a.closest(".album__listwrap"),
+          a.closest(".album__item"),
+          a.closest(".showindex__children"),
+          a.closest("li"),
+          a.closest("article"),
+          a.parentElement,
+          a.parentElement?.parentElement,
+        ].filter(Boolean);
+
+        const texts = [];
+        for (const node of cardCandidates) {
+          const tx = String(node?.innerText || node?.textContent || "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (!tx || tx.length > 700) continue;
+          if (!texts.includes(tx)) texts.push(tx);
+        }
+
+        const hasMoney = (tx) =>
+          /(?:¥|￥|元|\$|\bUSD\b|\bCNY\b|\bRMB\b)/i.test(tx);
+
+        const cardText =
+          texts.filter(hasMoney).sort((x, y) => x.length - y.length)[0] ||
+          texts.sort((x, y) => x.length - y.length)[0] ||
+          "";
+
         let hrefAbs = "";
         let imgAbs = "";
         try { hrefAbs = new URL(href, location.href).toString(); } catch {}
@@ -2005,7 +2594,7 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
           try { imgAbs = new URL(rawImg, location.href).toString(); } catch {}
         }
 
-        if (hrefAbs) out.push({ hrefAbs, imgAbs });
+        if (hrefAbs) out.push({ hrefAbs, imgAbs, cardText });
       }
 
       return out;
@@ -2022,6 +2611,16 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
 
       const imgAbs = String(it?.imgAbs || "").trim();
       if (imgAbs && !coverByAlbum.has(normAlbum)) coverByAlbum.set(normAlbum, toHttpsUrl(imgAbs));
+
+      const cardText = String(it?.cardText || "").replace(/\s+/g, " ").trim();
+      if (cardText) {
+        const prev = String(cardTextByAlbum.get(normAlbum) || "");
+        // Preferiamo una stringa che contiene un prezzo; a parità teniamo la più completa.
+        const hasMoney = (tx) => /(?:¥|￥|元|\$|\bUSD\b|\bCNY\b|\bRMB\b)/i.test(tx);
+        if (!prev || (!hasMoney(prev) && hasMoney(cardText)) || (hasMoney(prev) === hasMoney(cardText) && cardText.length > prev.length)) {
+          cardTextByAlbum.set(normAlbum, cardText);
+        }
+      }
     }
 
     const after = albumUrls.size;
@@ -2126,6 +2725,7 @@ async function scrapeCategory(context, categoryUrl, maxPagesCap = 0, storageAbsF
   return {
     albumUrls: Array.from(albumUrls),
     coverByAlbum,
+    cardTextByAlbum,
     pagesDetected,
     pagesVisited,
     stoppedEarly,
@@ -2776,9 +3376,23 @@ async function scrape1688OfferOnPage(
     }
   }
 
+  titleBase = stripPriceTokensFromTitle(titleBase) || stripPriceTokensFromTitle(titleRaw) || "Item";
+
+  let priceInfo = null;
   let priceCny = parseCnyFrom1688Html(html);
-  if (!priceCny) priceCny = parseCnyFromText(titleRaw);
-  if (!priceCny) priceCny = parseCnyFromText(bodyText);
+
+  if (priceCny) {
+    priceInfo = { amount: priceCny, currency: "CNY", cny: roundPrice(priceCny), raw: String(priceCny), source: "1688-html" };
+    priceCny = priceInfo.cny;
+  } else {
+    priceInfo = choosePriceInfo([
+      { source: "1688-title", text: titleRaw },
+      { source: "1688-body", text: bodyText },
+    ]);
+    priceCny = priceInfo?.cny ?? null;
+  }
+
+  logPriceResult(normUrl, priceInfo);
 
   const sellerName = seller || "";
   const source_url = normUrl;
@@ -2836,6 +3450,8 @@ async function scrapeAlbumOnPage(
 
   const aiEnabled = isAiEnabledForJob(jobOptions.ai);
   const shoeNameEnabled = isShoeNameEnabledForJob(jobOptions.shoeName, aiEnabled);
+  const categoryCardText = String(jobOptions.categoryCardText || "").replace(/\s+/g, " ").trim();
+  const sourcePreference = normalizeSourcePreference(jobOptions.source);
 
   async function extractAlbumPhotosRaw() {
     return page.evaluate(() => {
@@ -2933,6 +3549,7 @@ async function scrapeAlbumOnPage(
 
     const bodyText = await page.evaluate(() => document.body.innerText || "");
     const titleRaw = await getAlbumTitle(page);
+    const dedicatedPriceSignals = await extractDedicatedPriceSignals(page);
 
     const crumbText = await getYupooBreadcrumbText(page);
     const internal = pickBestInternalCoverBig(imagesBig, headerCoverRaw);
@@ -3034,6 +3651,10 @@ async function scrapeAlbumOnPage(
       }
     }
 
+    // Ultimo passaggio sul nome: rimuove solo numeri associati a valuta.
+    // I numeri modello (Sabrina 3, Jordan 4, 2.0, 990 v6...) restano.
+    titleBase = stripPriceTokensFromTitle(titleBase) || stripPriceTokensFromTitle(titleRaw) || "Item";
+
     // SOURCE LINK
     const rawLinks = await page
       .evaluate(() => {
@@ -3047,7 +3668,7 @@ async function scrapeAlbumOnPage(
       })
       .catch(() => []);
 
-    const externalSourceUrl = await pickPreferredSourceUrl(context, rawLinks);
+    const externalSourceUrl = await pickPreferredSourceUrl(context, rawLinks, sourcePreference);
 
     let cleanedSource = String(externalSourceUrl || "").trim();
     cleanedSource = decodeYupooExternalUrl(cleanedSource);
@@ -3060,8 +3681,23 @@ async function scrapeAlbumOnPage(
     cleanedSource = canonicalizeWeidianItemUrl(cleanedSource);
     cleanedSource = canonicalize1688OfferUrl(cleanedSource);
 
-    let priceCny = parseCnyFromText(titleRaw);
-    if (!priceCny) priceCny = parseCnyFromText(bodyText);
+    const selectedPlatform = detectSourcePlatform(cleanedSource);
+    console.log(
+      `🔀 SOURCE | item=${extractAlbumId(normUrl) || normUrl} | requested=${sourcePreference} | selected=${selectedPlatform || "NONE"}${cleanedSource ? ` | ${cleanedSource}` : ""}`
+    );
+
+    // Se il source è Weidian, genera lo short-link VigorBuy con inviteCode nPxRowk9.
+    // Se non è Weidian (Taobao/1688) oppure VigorBuy fallisce, mantiene il source originale.
+    const vigorbuySource = await convertExternalSourceToVigorBuy(cleanedSource);
+
+    const priceInfo = choosePriceInfo([
+      { source: "album-title", text: titleRaw },
+      { source: "category-card", text: categoryCardText },
+      { source: "dom-price", text: dedicatedPriceSignals },
+      { source: "album-body", text: bodyText },
+    ]);
+    const priceCny = priceInfo?.cny ?? null;
+    logPriceResult(normUrl, priceInfo);
 
     const sellerName = seller || "";
     const source_url = normUrl;
@@ -3089,8 +3725,8 @@ async function scrapeAlbumOnPage(
       img1to8[7] || "",
       extra.length ? extra.join(", ") : "",
       "ok",
-      normUrl,               // Q: source_url
-      cleanedSource || "",   // R: source (weidian/taobao/1688 external)
+      normUrl,                                // Q: Yupoo/source album
+      vigorbuySource || cleanedSource || "",    // R: VigorBuy per Weidian; altrimenti source originale
       priceCny ? String(priceCny) : "",
       "",
     ];
@@ -3124,6 +3760,7 @@ function parseJobLine(line) {
     titleMode: "",
     ai: "auto",
     shoeName: "auto",
+    source: "auto",
   };
 
   for (const p of parts.slice(1)) {
@@ -3142,11 +3779,13 @@ function parseJobLine(line) {
     else if (k === "titlemode") job.titleMode = v;
     else if (k === "ai") job.ai = v;
     else if (k === "shoename") job.shoeName = v;
+    else if (k === "source") job.source = v;
   }
 
   job.ai = normTriState(job.ai);
   job.shoeName = normTriState(job.shoeName);
   job.titleMode = normalizeTitleMode(job.titleMode, job.title);
+  job.source = normalizeSourcePreference(job.source);
 
   return job;
 }
@@ -3444,6 +4083,7 @@ async function main() {
         titleMode: normalizeTitleMode(job.titleMode, job.title),
         ai: normTriState(job.ai),
         shoeName: normTriState(job.shoeName),
+        source: normalizeSourcePreference(job.source),
       };
 
       if (!seller) {
@@ -3460,15 +4100,18 @@ async function main() {
       console.log("📌 Category override:", categoryOverride || "(AUTO/empty)");
       console.log("📄 maxPages:", maxPages ? `${maxPages} (CAP)` : "AUTO (tutte)");
       console.log("🖼️ img1:", img1Pick > 0 ? `MANUAL #${img1Pick}` : "AUTO (cover smart)");
+      console.log("🔀 Source preference:", jobOpts.source.toUpperCase(), jobOpts.source === "auto" ? "(TAOBAO > WEIDIAN)" : "(FORZATO)");
       console.log("------------------------------------");
 
       let albumUrls = [];
       let coverByAlbum = new Map();
+      let cardTextByAlbum = new Map();
 
       if (mode === "CATEGORY_YUPOO") {
         const res = await scrapeCategory(context, url, maxPages, storageAbs, url);
         albumUrls = Array.from(new Set(res.albumUrls.map(normalizeItemUrl)));
         coverByAlbum = res.coverByAlbum;
+        cardTextByAlbum = res.cardTextByAlbum || new Map();
       } else if (mode === "CATEGORY_1688") {
         const res = await scrape1688ShopOfferList(context, url, maxPages);
         albumUrls = Array.from(new Set(res.albumUrls.map(normalizeItemUrl)));
@@ -3507,6 +4150,7 @@ async function main() {
           }
 
           const coverUrl = coverByAlbum.get(normUrl) || "";
+          const categoryCardText = cardTextByAlbum.get(normUrl) || "";
 
           let row;
           try {
@@ -3521,7 +4165,7 @@ async function main() {
               coverUrl,
               storageAbs,
               url,
-              jobOpts
+              { ...jobOpts, categoryCardText }
             );
             global.albumsOk += 1;
             backoff.onOk();
@@ -3625,6 +4269,9 @@ async function main() {
     console.log(`Item estratti           : ${global.albumsExtracted}`);
     console.log(`Item processati         : ok=${global.albumsOk} | fail=${global.albumsFail}`);
     console.log(`Sheet                   : append=${global.sheetAppend} | update=${global.sheetUpdate}`);
+    console.log(
+      `VigorBuy                : ok=${vigorbuyStats.ok} | cache=${vigorbuyStats.cacheHit} | fail=${vigorbuyStats.fail} | nonWeidian=${vigorbuyStats.skippedNonWeidian}`
+    );
     console.log(`Skip existing(pre-open) : ${global.skippedExisting}`);
     console.log(`Skip checkpoint(resume) : ${global.skippedCheckpoint}`);
     console.log("===============================================");

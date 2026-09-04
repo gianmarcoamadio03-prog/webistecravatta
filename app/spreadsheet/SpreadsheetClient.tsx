@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { toUsFansProductUrl, toMulebuyProductUrl } from "../../data/affiliate";
+import { toUsFansProductUrl } from "../../data/affiliate";
 import { imgProxy, type ImgSize } from "@/src/lib/imgProxy";
 import { toggleFavorite, isFavorite, getFavoritesCount, subscribeFavorites } from "@/src/lib/favorites";
 
@@ -44,6 +44,22 @@ function normalizeSlug(s: string) {
 
 function isValidUrl(v: any) {
   return typeof v === "string" && /^https?:\/\//i.test(v.trim());
+}
+
+function isVigorBuyUrl(v: any) {
+  if (!isValidUrl(v)) return false;
+
+  try {
+    const host = new URL(String(v).trim()).hostname.toLowerCase();
+
+    return (
+      host === "vigorbuy.cc" ||
+      host === "vigorbuy.com" ||
+      host.endsWith(".vigorbuy.com")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function pickTitle(x: SheetItemLite) {
@@ -103,14 +119,14 @@ function buildUsFansLink(item: SheetItemLite) {
   return toUsFansProductUrl(source) ?? "";
 }
 
-function buildMulebuyLink(item: SheetItemLite) {
-  const direct = getDirectAgentUrl(item, "mulebuy");
-  if (direct) return direct;
-
+function buildVigorBuyLink(item: SheetItemLite) {
   const source = findFirstSourceUrl(item);
+
   if (!source) return "";
 
-  return toMulebuyProductUrl(source) ?? "";
+  // Lo scraper salva già il link ufficiale VigorBuy in source_url.
+  // NON riconvertiamo più il prodotto tramite MuleBuy.
+  return isVigorBuyUrl(source) ? source : "";
 }
 
 function formatEur(n: number) {
@@ -431,7 +447,7 @@ export default function SpreadsheetClient({
       const cover = pickCover(it);
 
       const usfans = buildUsFansLink(it);
-      const mulebuy = buildMulebuyLink(it);
+      const vigorbuy = buildVigorBuyLink(it);
 
       const priceRaw = (it as any)?.price_eur;
       const price = typeof priceRaw === "number" && Number.isFinite(priceRaw) ? priceRaw : null;
@@ -446,7 +462,7 @@ export default function SpreadsheetClient({
         category: (it.category ?? "").trim(),
         price,
         usfans,
-        mulebuy,
+        vigorbuy,
       };
     });
   }, [items]);
@@ -740,7 +756,7 @@ export default function SpreadsheetClient({
 
   function handleToggleFavorite(
     e: React.MouseEvent,
-    x: { slug: string; title: string; cover?: string; seller?: string; brand?: string; category?: string; price?: number | null; mulebuy?: string }
+    x: { slug: string; title: string; cover?: string; seller?: string; brand?: string; category?: string; price?: number | null; vigorbuy?: string }
   ) {
     e.stopPropagation();
     toggleFavorite({
@@ -751,7 +767,7 @@ export default function SpreadsheetClient({
       brand: x.brand,
       category: x.category,
       price: x.price ?? null,
-      mulebuy: x.mulebuy || undefined,
+      mulebuy: x.vigorbuy || undefined,
     });
     setFavCount(getFavoritesCount());
     setFavTick((n) => n + 1);
@@ -1220,7 +1236,40 @@ export default function SpreadsheetClient({
                       )}
 
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <AgentButton href={x.mulebuy || undefined} label="MuleBuy" accent />
+                        <button
+                          type="button"
+                          disabled={!x.vigorbuy}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+
+                            if (x.vigorbuy) {
+                              window.open(
+                                x.vigorbuy,
+                                "_blank",
+                                "noopener,noreferrer"
+                              );
+                            }
+                          }}
+                          className="
+                            inline-flex items-center justify-center
+                            rounded-full
+                            border border-[#ff6a86]/40
+                            bg-gradient-to-r
+                            from-[#ff4f70]
+                            to-[#f80046]
+                            px-3 py-1.5
+                            text-[11px] font-extrabold text-white
+                            shadow-[0_8px_24px_rgba(248,0,70,0.24)]
+                            transition-all duration-200
+                            hover:brightness-110
+                            hover:shadow-[0_10px_30px_rgba(248,0,70,0.34)]
+                            disabled:cursor-not-allowed
+                            disabled:opacity-35
+                          "
+                        >
+                          VigorBuy
+                        </button>
                       </div>
                     </div>
                   </div>

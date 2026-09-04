@@ -6,7 +6,7 @@ import BackLinkClient from "./BackLinkClient";
 import FavoriteButton from "./FavoriteButton";
 
 import { getItemBySlugOrId } from "@/data/itemsFromSheet";
-import { toUsFansProductUrl, toMulebuyProductUrl } from "@/data/affiliate";
+import { toUsFansProductUrl } from "@/data/affiliate";
 import { parseCny, cnyToEur, formatEUR } from "@/src/lib/currency";
 import { normalizeSlug } from "@/src/lib/slug";
 
@@ -206,10 +206,12 @@ export default async function ItemPage({
   const sourceUrl = findFirstSourceUrl(found);
 
   const usfansDirect = getDirectAgentUrl(found, "usfans");
-  const mulebuyDirect = getDirectAgentUrl(found, "mulebuy");
-
-  const usfansUrl = usfansDirect || (sourceUrl ? toUsFansProductUrl(sourceUrl) : "");
-  const mulebuyUrl = mulebuyDirect || (sourceUrl ? toMulebuyProductUrl(sourceUrl) : "");
+const usfansUrl = usfansDirect || (sourceUrl ? toUsFansProductUrl(sourceUrl) : "");
+  const vigorbuyUrl =
+    sourceUrl &&
+    /^https?:\/\/(?:www\.)?vigorbuy\.(?:cc|com)(?:\/|$)/i.test(sourceUrl)
+      ? sourceUrl
+      : "";
 
   const rowNumber =
     typeof found.rowNumber === "number" && Number.isFinite(found.rowNumber)
@@ -271,7 +273,7 @@ export default async function ItemPage({
                 brand={brand || undefined}
                 category={category || undefined}
                 price={eur}
-                mulebuy={mulebuyUrl || undefined}
+                mulebuy={vigorbuyUrl || undefined}
                 size="sm"
               />
             </div>
@@ -322,9 +324,9 @@ export default async function ItemPage({
 
               <div className="mt-4 grid gap-2">
                 <AgentBtn
-                  href={mulebuyUrl || undefined}
-                  label="MuleBuy"
-                  iconSrc="/agents/mulebuy.png"
+                  href={vigorbuyUrl || undefined}
+                  label="VigorBuy"
+                  iconSrc="/agents/vigorbuy.svg"
                   variant="primary"
                 />
                 <FavoriteButton
@@ -335,7 +337,7 @@ export default async function ItemPage({
                   brand={brand || undefined}
                   category={category || undefined}
                   price={eur}
-                  mulebuy={mulebuyUrl || undefined}
+                  mulebuy={vigorbuyUrl || undefined}
                 />
               </div>
 
@@ -379,9 +381,9 @@ export default async function ItemPage({
 
             <div className="mt-2 grid grid-cols-2 gap-2">
               <AgentBtn
-                href={mulebuyUrl || undefined}
-                label="MuleBuy"
-                iconSrc="/agents/mulebuy.png"
+                href={vigorbuyUrl || undefined}
+                label="VigorBuy"
+                iconSrc="/agents/vigorbuy.svg"
                 variant="primary"
                 size="sm"
               />
@@ -393,7 +395,7 @@ export default async function ItemPage({
                 brand={brand || undefined}
                 category={category || undefined}
                 price={eur}
-                mulebuy={mulebuyUrl || undefined}
+                mulebuy={vigorbuyUrl || undefined}
               />
             </div>
           </div>
