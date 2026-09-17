@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Pagina nascosta: niente indicizzazione su Google e simili -->
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="googlebot" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Cravatta Cinese</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👔</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#1d2a5c;      /* blu seta */
+    --ink:#fdf6e9;     /* avorio */
+    --silk:#e8b93a;    /* oro */
+    --red:#c8322b;     /* rosso lacca */
+    --muted:#aab3d6;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    padding:24px;min-height:100dvh;
+    background-image:
+      repeating-linear-gradient(135deg, rgba(255,255,255,.035) 0 14px, transparent 14px 28px);
+  }
+  main{width:100%;max-width:380px;text-align:center}
+  .tie{width:64px;margin:0 auto 20px;display:block}
+  h1{font-weight:800;font-size:2.1rem;line-height:1.05;letter-spacing:-.02em;margin-bottom:12px}
+  p{color:var(--muted);font-size:1rem;line-height:1.5;font-weight:500}
+  .btn{
+    display:block;width:100%;margin-top:22px;padding:16px 20px;
+    border:0;border-radius:999px;cursor:pointer;
+    font:800 1.05rem/1 inherit;font-family:inherit;text-decoration:none;
+    background:var(--silk);color:var(--bg);
+  }
+  .btn.ghost{background:transparent;color:var(--ink);border:2px solid rgba(253,246,233,.35);margin-top:12px}
+  .btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+  .steps{text-align:left;margin-top:22px;padding-left:1.4em;color:var(--ink);line-height:1.7}
+  .steps b{color:var(--silk)}
+  .hint{
+    position:fixed;top:10px;right:14px;
+    font-weight:800;color:var(--silk);font-size:.95rem;text-align:right;
+  }
+  .hint svg{display:block;margin-left:auto;width:46px;animation:nudge 1.2s ease-in-out infinite}
+  @keyframes nudge{50%{transform:translate(4px,-4px)}}
+  @media (prefers-reduced-motion:reduce){.hint svg{animation:none}}
+  .toast{margin-top:10px;min-height:1.2em;color:var(--silk);font-size:.9rem}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+
+<div class="hint" id="hint" hidden>
+  <svg viewBox="0 0 50 50" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M8 44 C 20 30, 30 20, 42 8"/><path d="M26 8 H42 V24"/>
+  </svg>
+  Tocca qui
+</div>
+
+<main>
+  <svg class="tie" viewBox="0 0 64 100" aria-hidden="true">
+    <path d="M22 4h20l-4 12H26z" fill="#c8322b"/>
+    <path d="M26 16h12l10 58-16 22-16-22z" fill="#c8322b"/>
+    <path d="M29 30l14 14M27 46l18 18M26 62l14 14" stroke="#e8b93a" stroke-width="3"/>
+  </svg>
+
+  <!-- Stato: apertura in corso -->
+  <section id="loading">
+    <h1>Ti porto ai miei link</h1>
+    <p>Un attimo…</p>
+  </section>
+
+  <!-- Stato: dentro TikTok / Instagram (soprattutto iPhone) -->
+  <section id="inapp" hidden>
+    <h1>Apri nel browser</h1>
+    <p>TikTok non fa aprire bene questa pagina. Ci vogliono due tocchi:</p>
+    <ol class="steps">
+      <li>Tocca <b>•••</b> in alto a destra</li>
+      <li>Scegli <b>Apri nel browser</b></li>
+    </ol>
+    <button class="btn" id="tryBtn" type="button">Apri nel browser</button>
+    <button class="btn ghost" id="copyBtn" type="button">Copia link</button>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  // ========== CONFIGURA QUI ==========
+  var LINKTREE = "https://beacons.ai/chinabois";
+  // ===================================
+
+  var ua = navigator.userAgent || "";
+  var isAndroid = /android/i.test(ua);
+  var isIOS = /iphone|ipad|ipod/i.test(ua) ||
+              (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  // TikTok (musical_ly / Bytedance / trill), più Instagram e Facebook per sicurezza
+  var isInApp = /musical_ly|bytedancewebview|bytelocale|tiktok|trill_|instagram|fban|fbav|fb_iab/i.test(ua);
+
+  var hostPath = LINKTREE.replace(/^https?:\/\//, "");
+
+  function show(id){ document.getElementById(id).hidden = false; }
+  function hide(id){ document.getElementById(id).hidden = true; }
+
+  function openExternal() {
+    if (isAndroid) {
+      // Forza l'apertura in Chrome / browser predefinito
+      window.location.href = "intent://" + hostPath +
+        "#Intent;scheme=https;S.browser_fallback_url=" + encodeURIComponent(LINKTREE) + ";end";
+    } else if (isIOS) {
+      // Safari (iOS 17+); se TikTok lo blocca restano le istruzioni a schermo
+      window.location.href = "x-safari-" + LINKTREE;
+    } else {
+      window.location.href = LINKTREE;
+    }
+  }
+
+  if (!isInApp) {
+    // Browser normale: vai dritto al Linktree
+    window.location.replace(LINKTREE);
+    return;
+  }
+
+  // Dentro TikTok: prova a uscire subito
+  openExternal();
+
+  // Se dopo poco siamo ancora qui, mostra le istruzioni
+  setTimeout(function () {
+    if (document.visibilityState === "hidden") return;
+    hide("loading"); show("inapp");
+    if (isIOS || isAndroid) show("hint");
+  }, 900);
+
+  document.getElementById("tryBtn").addEventListener("click", openExternal);
+
+  document.getElementById("copyBtn").addEventListener("click", function () {
+    var toast = document.getElementById("toast");
+    function done(){ toast.textContent = "Link copiato. Incollalo in Safari o Chrome."; }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(LINKTREE).then(done, fallback);
+    } else { fallback(); }
+    function fallback(){
+      try {
+        var t = document.createElement("textarea");
+        t.value = LINKTREE; t.setAttribute("readonly","");
+        t.style.position = "fixed"; t.style.opacity = "0";
+        document.body.appendChild(t); t.select();
+        document.execCommand("copy"); document.body.removeChild(t);
+        done();
+      } catch (e) { toast.textContent = "Copia a mano: " + LINKTREE; }
+    }
+  });
+})();
+</script>
+</body>
+</html>
