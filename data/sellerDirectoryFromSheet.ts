@@ -33,10 +33,10 @@ export async function getBrandSellerDirectory(): Promise<BrandSection[]> {
   try {
     const doc = new GoogleSpreadsheet(documentId, auth());
     await doc.loadInfo();
-    const brandSheet = doc.sheetsByTitle["seller_brands"];
-    const sellerSheet = doc.sheetsByTitle["seller_directory"];
+    const brandSheet = doc.sheetsById[1321971455];
+    const sellerSheet = doc.sheetsById[466865418];
     if (!brandSheet || !sellerSheet) {
-      throw new Error("Servono solamente le schede seller_brands e seller_directory");
+      throw new Error("Servono solamente le schede seller_brand e seller_directory");
     }
 
     const [brandRows, sellerRows] = await Promise.all([brandSheet.getRows(), sellerSheet.getRows()]);
