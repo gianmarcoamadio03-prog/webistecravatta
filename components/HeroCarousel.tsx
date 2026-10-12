@@ -9,7 +9,7 @@ type OrbitItem = { label: string; href: string };
 const ITEMS: OrbitItem[] = [
   { label: "Spreadsheet", href: "/spreadsheet" },
   { label: "Best Seller", href: "/sellers" },
-  { label: "Tutorial", href: "/tutorials" },
+  { label: "Haul", href: "/hauls" },
   { label: "Coupon", href: "/coupons" },
 ];
 

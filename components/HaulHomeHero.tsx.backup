@@ -1,0 +1,23 @@
+import Link from "next/link";
+import Image from "next/image";
+import styles from "./HaulHomeHero.module.css";
+
+/** Homepage decoration only: actual hauls remain available at /hauls. */
+export default function HaulHomeHero() {
+  return (
+    <section id="hauls" className={styles.section} aria-labelledby="haul-heading">
+      <div className={styles.glow} aria-hidden="true" />
+      <div className={styles.leftBox} aria-hidden="true">
+        <Image src="/haul/box-open.webp" alt="" fill sizes="(max-width: 768px) 210px, 560px" className={styles.boxImg} />
+      </div>
+      <div className={styles.rightBox} aria-hidden="true">
+        <Image src="/haul/box-closed.webp" alt="" fill sizes="(max-width: 768px) 240px, 560px" className={styles.boxImg} />
+      </div>
+      <div className={styles.content}>
+        <p className={styles.eyebrow}>COLLECTION</p>
+        <h2 id="haul-heading" className={styles.title}>Haul</h2>
+        <Link href="/hauls" className={styles.cta}>Scopri gli Haul <span aria-hidden="true">→</span></Link>
+      </div>
+    </section>
+  );
+}

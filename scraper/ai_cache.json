@@ -2,7 +2,7 @@
   "entries": {},
   "meta": {
     "createdAt": "2026-02-23T21:45:42.448Z",
-    "updatedAt": "2026-07-01T02:34:07.712Z",
-    "version": "2026-02-20 | flush+checkpoint+resume + skip-existing-preopen + disk-ai-cache + concurrency + queued-append fix + 1688SHOP"
+    "updatedAt": "2026-09-10T02:17:41.231Z",
+    "version": "2026-09-04 | VigorBuy + robust prices + source selector + AUTO title cleanup (price/Chinese/parentheses) + flush/checkpoint/resume"
   }
 }

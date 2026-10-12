@@ -52,7 +52,7 @@ function tryReadServiceAccountJson(): { email: string; key: string } | null {
   return null;
 }
 
-function auth() {
+export function auth() {
   const email =
     process.env.GOOGLE_CLIENT_EMAIL ||
     process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ||

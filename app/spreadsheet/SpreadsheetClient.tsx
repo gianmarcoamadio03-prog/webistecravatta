@@ -692,7 +692,9 @@ export default function SpreadsheetClient({
 
     if (kind === "seller") {
       setSellerFilter(value);
-      go(1, { seller: value }, "push");
+      setBrandFilter("all");
+      setCategoryFilter("all");
+      go(1, { seller: value, brand: "all", category: "all" }, "push");
       closePicker();
       return;
     }
@@ -894,7 +896,9 @@ export default function SpreadsheetClient({
                       label={`Seller: ${sellerFilter}`}
                       onClear={() => {
                         setSellerFilter("all");
-                        go(1, { seller: "all" }, "push");
+                        setBrandFilter("all");
+                        setCategoryFilter("all");
+                        go(1, { seller: "all", brand: "all", category: "all" }, "push");
                       }}
                     />
                   ) : null}
@@ -997,7 +1001,9 @@ export default function SpreadsheetClient({
                   onChange={(e) => {
                     const v = e.target.value;
                     setSellerFilter(v);
-                    go(1, { seller: v }, "push");
+                    setBrandFilter("all");
+                    setCategoryFilter("all");
+                    go(1, { seller: v, brand: "all", category: "all" }, "push");
                   }}
                   style={{ colorScheme: "dark" }}
                   className={`${selectClass} w-[160px] sm:w-[170px] md:w-[190px]`}
@@ -1069,7 +1075,9 @@ export default function SpreadsheetClient({
                       label={`Seller: ${sellerFilter}`}
                       onClear={() => {
                         setSellerFilter("all");
-                        go(1, { seller: "all" }, "push");
+                        setBrandFilter("all");
+                        setCategoryFilter("all");
+                        go(1, { seller: "all", brand: "all", category: "all" }, "push");
                       }}
                     />
                   ) : null}

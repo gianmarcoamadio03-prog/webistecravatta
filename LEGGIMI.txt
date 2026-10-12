@@ -1,0 +1,15 @@
+PATCH HAUL - layout piu compatto
+
+Sostituisce SOLTANTO:
+- components/HaulGallery.tsx
+- app/hauls/[id]/page.tsx
+
+Novita:
+- copertina max 390 px, intera e senza ritagli
+- foto in miniature regolari (2/3/4 colonne), senza tagli, cliccabili
+- lightbox con navigazione e tasto Escape
+- articoli piu compatti
+
+Google Sheet / .env.local NON cambiano.
+
+Installazione: decomprimere dalla radice del progetto Next.js.

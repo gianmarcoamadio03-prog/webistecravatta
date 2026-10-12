@@ -1,0 +1,31 @@
+CRAVATTACINESE - HAUL / GOOGLE SHEETS 8 COLONNE
+
+1) Nella scheda Google chiamata hauls imposta ESATTAMENTE queste intestazioni:
+   A id
+   B title
+   C cover_image
+   D weight_kg
+   E dimensions_cm
+   F shipping_agent
+   G photos
+   H items
+
+2) G2 (photos): incolla link alle immagini separati da una barra verticale:
+   https://esempio.it/foto1.jpg | https://esempio.it/foto2.jpg
+   Sono ammessi anche URL uno sotto l'altro all'interno della cella.
+
+3) H2 (items): un articolo per riga NELLA STESSA CELLA:
+   Felpa Supreme ; https://esempio.it/prodotto1
+   Sneakers Nike ; https://esempio.it/prodotto2
+
+4) Sul Mac: salva/ferma il sito, fai un backup e decomprimi questo ZIP
+   nella cartella principale cravatta-app-optimized, mantenendo le cartelle.
+   Vengono aggiornati SOLO:
+   - data/haulsFromSheet.ts
+   - app/hauls/[id]/page.tsx
+
+5) Riavvia npm run dev e controlla /hauls/haul-001.
+
+Non cambiare .env.local e NON modificare la homepage o la sezione Seller.
+Il file components/HaulGallery.tsx gia installato nella patch precedente
+mostra le immagini nelle proporzioni originali e permette di ingrandirle.

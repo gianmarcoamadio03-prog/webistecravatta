@@ -33,3 +33,15 @@ public/parallax/
 public/parallax/
 *.bak.*
 build.log
+
+# Private environment files
+.env
+.env.*
+!.env.example
+
+# Backup e file temporanei
+*.backup
+*.bak
+*.pre-colors
+*.pre-masonry
+*.before-*

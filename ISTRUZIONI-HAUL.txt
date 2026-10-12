@@ -1,0 +1,16 @@
+# HAUL — foto senza ritagli e Google Sheet semplificato
+
+Scheda Google: `hauls`, intestazioni A1:G1:
+
+`id | title | cover_image | weight_kg | dimensions_cm | shipping_agent | items`
+
+Le vecchie colonne `description` e `package_photos` NON sono più lette dal sito: puoi eliminarle dal foglio. **ATTENZIONE:** se elimini G e H nel foglio precedente, la colonna `items` si sposterà automaticamente da I a G. Verifica che l'intestazione `items` sia in G1.
+
+Formato cella `items`: una riga per articolo, campi separati da punto e virgola; foto multiple separate da barra verticale:
+
+`Felpa Stone Island ; https://esempio.it/foto1.jpg | https://esempio.it/foto2.jpg ; https://negozio.it/prodotto`
+`Sneakers ; https://esempio.it/scarpa.jpg ; https://negozio.it/scarpa`
+
+Le immagini (copertina, anteprima, articoli) mantengono le proporzioni originali, senza `object-cover`. L'ingrandimento rimane disponibile.
+
+Installazione: estrai lo ZIP nella radice del progetto Next.js, sovrascrivendo solo i 5 file contenuti. Prima fai un backup. Non modifica Home, Seller, Spreadsheet, env o Google Sheets. Riavvia npm run dev e verifica /hauls e il dettaglio.

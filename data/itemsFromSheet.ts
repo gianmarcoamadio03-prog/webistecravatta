@@ -787,7 +787,20 @@ export async function getSpreadsheetPage(
   const filterSeedKey = `${baseSeed}|b=${brand}|c=${category}|s=${seller}|q=${q}`;
 
   const meta      = await getMeta();
-  const allFacets = meta.facets;
+  // Facet contestuali: con un seller selezionato, mostra soltanto i brand
+  // e le categorie realmente presenti nei suoi articoli (tutte le pagine).
+  // Il filtro non dipende da q, brand o category, evitando di nascondere
+  // opzioni valide quando l'utente affina ulteriormente la ricerca.
+  const allFacets: Facets = seller && seller !== "all"
+    ? (() => {
+        const sellerRows = meta.rows.filter((r) => r.seller === seller);
+        return {
+          brands: uniqueSorted(sellerRows.map((r) => r.brand).filter(Boolean)),
+          categories: uniqueSorted(sellerRows.map((r) => r.category).filter(Boolean)),
+          sellers: meta.facets.sellers,
+        };
+      })()
+    : meta.facets;
 
   const filteredRowNumbers = filterRowNumbers(meta.rows, { q, brand, category, seller });
   const orderedRowNumbers =

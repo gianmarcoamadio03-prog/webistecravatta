@@ -3,10 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-// ✅ joined lo teniamo "persistente" (localStorage) SOLO se vuoi evitare popup dopo join.
-// ✅ dismissed lo teniamo "solo sessione" (sessionStorage) così a ogni riapertura torna.
-const KEY_JOINED = "cravatta_tg_joined_v1";
-const KEY_SESSION = "cravatta_tg_session_v1"; // values: "dismissed"
 const TG_LINK = "https://t.me/addlist/o6IIDaHApiQ2MzM0";
 
 function TelegramIcon({ className = "" }: { className?: string }) {
@@ -36,43 +32,12 @@ function XIcon({ className = "" }: { className?: string }) {
   );
 }
 
-function readJoined(): boolean {
-  try {
-    return localStorage.getItem(KEY_JOINED) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writeJoined(v: boolean) {
-  try {
-    if (v) localStorage.setItem(KEY_JOINED, "1");
-    else localStorage.removeItem(KEY_JOINED);
-  } catch {}
-}
-
-function readSessionDismissed(): boolean {
-  try {
-    return sessionStorage.getItem(KEY_SESSION) === "dismissed";
-  } catch {
-    return false;
-  }
-}
-
-function writeSessionDismissed() {
-  try {
-    sessionStorage.setItem(KEY_SESSION, "dismissed");
-  } catch {}
-}
-
 export default function TelegramPopup({
   delayMs = 3000,
   collapseAfterMs = 3500, // quanto resta “larga” la pill dopo la chiusura
-  showPopupEvenIfJoined = false, // ✅ se vuoi che il popup torni anche se uno ha già premuto "Entra"
 }: {
   delayMs?: number;
   collapseAfterMs?: number;
-  showPopupEvenIfJoined?: boolean;
 }) {
   const pathname = usePathname();
   const isHome = pathname === "/";
@@ -111,38 +76,16 @@ export default function TelegramPopup({
       return;
     }
 
-    const joined = readJoined();
-    const dismissedThisSession = readSessionDismissed();
-
-    // ✅ DOT sempre visibile dopo dismiss (o dopo join)
-    // - Se joined e NON vuoi popup: mostra solo dot.
-    if (joined && !showPopupEvenIfJoined) {
-      setOpen(false);
-      setPillVisible(true);
-      setPillCompact(true);
-      return;
-    }
-
-    // ✅ Se ha chiuso il popup in questa sessione: niente popup, dot (compatto)
-    if (dismissedThisSession) {
-      setOpen(false);
-      setPillVisible(true);
-      setPillCompact(true);
-      return;
-    }
-
-    // ✅ altrimenti: mostra popup dopo delay (ogni nuova “sessione”)
+    // Mostra il popup a ogni nuova apertura/ricaricamento della homepage.
     timerPopupRef.current = window.setTimeout(() => {
       setOpen(true);
       setPillVisible(false);
     }, delayMs);
 
     return clearTimers;
-  }, [isHome, delayMs, showPopupEvenIfJoined]);
+  }, [isHome, delayMs]);
 
   const closePopup = () => {
-    // ✅ solo sessione: così chiudendo la scheda e riaprendo → torna
-    writeSessionDismissed();
 
     setOpen(false);
 
@@ -153,12 +96,7 @@ export default function TelegramPopup({
   };
 
   const join = () => {
-    // ✅ opzionale: memorizza che ha cliccato “Entra”
-    // così puoi decidere se non mostrargli più il popup (showPopupEvenIfJoined=false)
-    writeJoined(true);
 
-    // in questa sessione non rompere più: chiudi e passa a dot
-    writeSessionDismissed();
     setOpen(false);
     setPillVisible(true);
     setPillCompact(true);
@@ -236,7 +174,7 @@ export default function TelegramPopup({
         </div>
       )}
 
-      {/* PILL / DOT (persistente dopo dismiss/join) */}
+      {/* PILL / DOT dopo la chiusura o il clic su Telegram */}
       {pillVisible && !open && (
         <div
           className="fixed z-[9998]"

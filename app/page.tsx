@@ -6,7 +6,7 @@ import ParallaxSection from "@/components/ParallaxSection";
 import SpreadsheetPreviewCarousel from "@/components/SpreadsheetPreviewCarousel";
 
 import SellersHomeTeaser from "@/src/lib/components/home/SellersHomeTeaser";
-import TutorialCarousel from "@/components/TutorialCarousel";
+import HaulHomeHero from "@/components/HaulHomeHero";
 
 import { getFeaturedSellersFromCards } from "@/data/sellersFromSheet";
 import LanguageMenu from "@/components/LanguageMenu";
@@ -102,15 +102,8 @@ export default async function HomePage() {
       {/* 3) SELLERS */}
       <SellersHomeTeaser sellers={preview} />
 
-      {/* 4) TUTORIAL */}
-      <ParallaxSection id="tutorials" eyebrow="GUIDE" title="Tutorial" childrenWidth="wide" decor="orbs">
-        <div className="sheet-ctaRow">
-          <Link href="/tutorials" className="sheet-cta">
-            Vai ai Tutorial →
-          </Link>
-        </div>
-        <TutorialCarousel />
-      </ParallaxSection>
+      {/* 4) HAUL — decorative shipping boxes, independent of Sheets */}
+      <HaulHomeHero />
 
       {/* 5) COUPON */}
       <ParallaxSection id="coupons" eyebrow="SAVINGS" title="Coupon" decor="orbs">
