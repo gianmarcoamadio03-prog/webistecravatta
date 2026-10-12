@@ -44,5 +44,8 @@
   "description": "Next.js app che mostra una Spreadsheet/catalogo (con pagina dettaglio item + link agent).",
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "engines": {
+    "node": "24.x"
+  }
 }
